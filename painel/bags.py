@@ -63,6 +63,14 @@ class BagManager:
             self.player = None
         return self.player is not None
 
+    def player_elapsed(self, now):
+        """Tempo decorrido do bag, sem contar as pausas. O ros2 bag não informa a posição."""
+        player = self.player
+        paused_now = now - player["paused_at"] if player["paused_at"] is not None else 0.0
+        elapsed = now - player["started"] - player["paused_total"] - paused_now
+        total = player["total"]
+        return max(0.0, min(elapsed, total) if total is not None else elapsed)
+
     def status(self):
         now = time.time()
         recording = None
@@ -71,7 +79,8 @@ class BagManager:
                          "alive": self.recording["process"].returncode is None}
         playing = None
         if self.playing:
-            playing = {"name": self.player["name"], "paused": self.player["paused"]}
+            playing = {"name": self.player["name"], "paused": self.player["paused"],
+                       "elapsed": round(self.player_elapsed(now)), "total": self.player["total"]}
         return {"recording": recording, "playing": playing}
 
     def listing(self):
@@ -159,10 +168,13 @@ class BagManager:
             raise ValueError("já existe um bag em reprodução")
         if self.recording:
             raise ValueError("pare a gravação antes de reproduzir")
-        if not any(b["name"] == name for b in list_bags(self.root)):
+        bag = next((b for b in list_bags(self.root) if b["name"] == name), None)
+        if bag is None:
             raise ValueError(f"bag desconhecido: {name}")
         process = await self._spawn("ros2", "bag", "play", os.path.join(self.root, name))
-        self.player = {"name": name, "process": process, "started": time.time(), "paused": False}
+        self.player = {"name": name, "process": process, "started": time.time(), "paused": False,
+                       "total": round(bag["seconds"]) if bag["seconds"] is not None else None,
+                       "paused_at": None, "paused_total": 0.0}
         return name
 
     async def toggle_pause(self):
@@ -171,7 +183,13 @@ class BagManager:
         process = await self._spawn("ros2", "service", "call", "/rosbag2_player/toggle_paused",
                                     "rosbag2_interfaces/srv/TogglePaused")
         await asyncio.wait_for(process.wait(), 10.0)
-        if process.returncode == 0:
+        if process.returncode == 0 and self.player:
+            now = time.time()
+            if self.player["paused"]:
+                self.player["paused_total"] += now - self.player["paused_at"]
+                self.player["paused_at"] = None
+            else:
+                self.player["paused_at"] = now
             self.player["paused"] = not self.player["paused"]
         return process.returncode == 0
 

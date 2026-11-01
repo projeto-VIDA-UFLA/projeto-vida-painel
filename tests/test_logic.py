@@ -217,6 +217,20 @@ def test_bag_rename_and_delete(tmp_path):
         manager.delete("pista_1")
 
 
+def test_bag_elapsed_ignores_pauses():
+    from painel.bags import BagManager
+    manager = BagManager("/nao/existe")
+    manager.player = {"started": 100.0, "total": 31, "paused_at": None, "paused_total": 0.0}
+    assert manager.player_elapsed(110.0) == 10
+    manager.player.update(paused_at=110.0)
+    assert manager.player_elapsed(115.0) == 10           # parado na pausa
+    manager.player.update(paused_at=None, paused_total=5.0)
+    assert manager.player_elapsed(120.0) == 15
+    assert manager.player_elapsed(500.0) == 31           # não passa do total
+    manager.player.update(total=None)
+    assert manager.player_elapsed(120.0) == 15
+
+
 def test_recorder_rejects_short(tmp_path):
     rec = routes.RouteRecorder(str(tmp_path))
     rec.start(0.0)

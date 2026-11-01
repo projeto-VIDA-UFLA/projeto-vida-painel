@@ -288,15 +288,19 @@ function setTab(name) {
   $("btnRecord").hidden = bags || !!last?.recording; $("btnBagRecord").hidden = !bags || !!last?.bags?.recording;
   if (bags) loadBags();
 }
+const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
 function renderBagBars(b) {
   const rec = $("bagRecBox"), play = $("bagPlayBox");
   rec.hidden = !b.recording; play.hidden = !b.playing;
   if (b.recording) {
-    const t = b.recording.seconds;
-    setHtml(rec, `<span>● Gravando bag ${esc(b.recording.name)} · ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}</span><button data-bagact="recstop">■ Parar</button>`);
+    // Só o texto muda a cada segundo: recriar o botão poderia perder o clique.
+    setHtml(rec, '<span id="bagRecText"></span><button data-bagact="recstop">■ Parar</button>');
+    $("bagRecText").textContent = `● Gravando bag ${b.recording.name} · ${mmss(b.recording.seconds)}`;
   } else rec._html = "";
   if (b.playing) {
-    setHtml(play, `<span>▶ ${esc(b.playing.name)}${b.playing.paused ? " · pausado" : ""}</span><span><button data-bagact="pause">${b.playing.paused ? "▶ Continuar" : "❚❚ Pausar"}</button><button data-bagact="stop">■ Parar</button></span>`);
+    setHtml(play, `<span id="bagPlayText"></span><span class="bb"><button data-bagact="pause">${b.playing.paused ? "▶ Continuar" : "❚❚ Pausar"}</button><button data-bagact="stop">■ Parar</button></span>`);
+    const total = b.playing.total === null ? "?" : mmss(b.playing.total);
+    $("bagPlayText").textContent = `▶ ${b.playing.name} · ${mmss(b.playing.elapsed)} / ${total}${b.playing.paused ? " · pausado" : ""}`;
   } else play._html = "";
   if (!$("tabBags").classList.contains("on")) return;
   $("btnBagRecord").hidden = !!b.recording;
