@@ -42,6 +42,7 @@ O acesso ao Docker do notebook equivale a root. Por isso, o servidor escuta só 
 
 - **Pendências:** repetem o `entry_problem` do `mode_manager`, com os limites lidos do `navigation.yaml`. Se ele mudar, mude também `painel/logic.py`.
 - **Bateria:** 36 V = 0% e 38,7 V = 100%, em `painel/logic.py`. A carga só é recalculada depois de 60 s parado e sem tração, porque sob carga a tensão cai. Verde a partir de 50%, amarelo de 20 a 49%, vermelho abaixo de 20%.
+- **Limpar erros:** apaga só o histórico da tela. Flags ativas continuam aparecendo até serem resolvidas, e nada é rearmado no carro.
 - **Dados parados:** viram "sem dados" em vez de manter o último valor.
 - **Mapa GPS:** imagens Esri World Imagery, salvas em disco ao selecionar a rota e usadas sem internet. Uma área ainda não salva fica sem foto, com aviso; o Gráfico funciona sempre. Os termos de uso da Esri para guardar imagens ainda precisam ser conferidos.
 

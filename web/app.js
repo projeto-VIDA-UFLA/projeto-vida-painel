@@ -227,6 +227,7 @@ function renderCards(d) {
   const active = s.flags.map((f) => `<div class="e"><div class="o">Segurança · agora</div><b>Flag ${f.bit}: ${esc(f.name)}</b><div class="d">${esc(f.hint)}</div></div>`);
   const activeTitles = new Set(s.flags.map((f) => `Flag ${f.bit}: ${f.name}`));
   const past = d.errors.filter((e) => !activeTitles.has(e.title)).map((e) => `<div class="e g"><div class="o">${esc(e.source)} · ${clock(e.t)}</div><b>${esc(e.title)}</b>${e.detail ? `<div class="d">${esc(e.detail)}</div>` : ""}</div>`);
+  $("btnClearErrors").hidden = !past.length;
   setHtml($("errors"), active.concat(past).join("") || '<div class="none">Nenhum erro nesta sessão</div>');
   setHtml($("events"), d.events.map((e) => `<div><time>${clock(e.t)}</time><span>${esc(e.text)}</span></div>`).join(""));
 
@@ -348,6 +349,8 @@ $("routes").addEventListener("click", (event) => {
   else if (warning) dialog(`Selecionar ${esc(name)}?`, warning, [["Cancelar"], ["Selecionar", "p", select]]);
   else select();
 });
+// Só apaga o histórico: flag ativa continua na lista até ser resolvida no carro.
+$("btnClearErrors").onclick = () => post("/api/errors/clear");
 $("btnRecord").onclick = async () => {
   const data = await (await fetch("/api/routes")).json();
   dialog("Gravar nova rota", `Conduza o veículo pelo traçado desejado. A rota usa os pontos do GPS.<br>Nome:<input id="recName" value="${esc(data.next_name)}" maxlength="40">`,

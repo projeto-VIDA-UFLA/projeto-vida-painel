@@ -202,6 +202,12 @@ class App:
             self.bridge.event(f"Rota {summary['name']} salva: {summary['length_m']} m")
         return web.json_response({"ok": True, "saved": True, "summary": summary})
 
+    async def clear_errors(self, request):
+        with self.bridge.lock:
+            self.bridge.errors.clear()
+            self.bridge.event("Histórico de erros limpo")
+        return web.json_response({"ok": True})
+
     # -------------------------------------------------------- mapa
     def fetch_tile(self, z, y, x):
         """Guarda a imagem no disco: na pista, sem internet, usa a cópia salva."""
@@ -260,6 +266,7 @@ def build_app(bridge, control):
     app.router.add_post("/api/start", state.start)
     app.router.add_post("/api/stop", state.stop)
     app.router.add_post("/api/select", state.select)
+    app.router.add_post("/api/errors/clear", state.clear_errors)
     app.router.add_post("/api/record/start", state.record_start)
     app.router.add_post("/api/record/stop", state.record_stop)
     app.router.add_get(r"/tiles/{z:\d+}/{y:\d+}/{x:\d+}", state.tile)
