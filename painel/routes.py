@@ -77,6 +77,48 @@ def load_points(route_id, root=None):
             "points": [[round(float(a), 8), round(float(b), 8)] for a, b in zip(path.latitude_deg, path.longitude_deg)]}
 
 
+def _siblings(path):
+    """Arquivos da rota: CSV, bruta e gráficos."""
+    stem = path[:-4]
+    return [p for p in (path, f"{stem}.png", f"{stem}_bruta.csv", f"{stem}_bruta.png") if os.path.exists(p)]
+
+
+def rename_route(route_id, new_name, root=None):
+    root = root or ROOT
+    path = resolve(route_id, root)
+    new_name = (new_name or "").strip()
+    if not NAME_RE.match(new_name):
+        raise ValueError("use só letras, números, _ e - no nome da rota")
+    if any(r["name"] == new_name for r in list_routes(root)):
+        raise ValueError(f"já existe uma rota chamada {new_name}")
+    stem, folder = path[:-4], os.path.dirname(path)
+    old = os.path.basename(stem)
+    for item in _siblings(path):
+        target = os.path.join(folder, new_name + os.path.basename(item)[len(old):])
+        os.rename(item, target)
+        if target.endswith(".csv"):
+            with open(target, encoding="utf-8") as stream:
+                lines = stream.readlines()
+            lines = [f"# name: {new_name}\n" if line.startswith("# name:") else line for line in lines]
+            with open(target, "w", encoding="utf-8") as stream:
+                stream.writelines(lines)
+            _chown(target)
+    return os.path.relpath(os.path.join(folder, f"{new_name}.csv"), root)
+
+
+def delete_route(route_id, root=None):
+    """Move para .lixeira, fora da lista: um clique errado não perde a rota."""
+    root = root or ROOT
+    path = resolve(route_id, root)
+    trash = os.path.join(root, ".lixeira", dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+    os.makedirs(trash, exist_ok=True)
+    _chown(os.path.dirname(trash))
+    _chown(trash)
+    for item in _siblings(path):
+        os.replace(item, os.path.join(trash, os.path.basename(item)))
+    return os.path.relpath(trash, root)
+
+
 def next_name(root=None):
     root = root or ROOT
     numbers = [int(m.group(1)) for f in glob.glob(os.path.join(root, "*", "rota_*.csv"))

@@ -370,6 +370,11 @@ class Bridge(Node):
             cross = abs(stanley.cross_track_m)
             kept = [c for c in checks if not c["label"].startswith(("Veículo", "Navegação"))]
             checks = kept + [logic.check(f"Erro lateral até {limit:.1f} m".replace(".", ","), f"{cross:.2f} m".replace(".", ","), cross <= limit)]
+        next_text = "" if automatic else logic.next_step(checks, bool(running))
+        if self.route is None and not automatic:
+            # Sem rota é um uso normal: andar no manual. Não é pendência.
+            checks = [c for c in checks if not c["label"].startswith(("Rota", "Navegação"))]
+            next_text = "para usar o automático, selecione uma rota."
         names = [flagdefs.decode(safety.inhibit_flags) if safety else []][0]
         battery = t["battery"].msg if fresh("battery") else None
         percent = self.battery.percent
@@ -414,7 +419,7 @@ class Bridge(Node):
                          "saturated": bool(stanley.steering_saturated) if stanley and automatic else False},
             "checks": {"title": "Condições do automático" if automatic else "Para executar a rota",
                        "items": checks, "ready": all(c["ok"] for c in checks),
-                       "next": "" if automatic else logic.next_step(checks, bool(running)), "automatic": automatic},
+                       "next": next_text, "no_route": self.route is None and not automatic, "automatic": automatic},
             "errors": list(self.errors)[:60],
             "events": list(self.events)[:60],
             "health": [{"name": n, "hz": round(logic.rate_meter(t[k].stamps, now), 1 if k in ("fix", "rtcm") else 0),

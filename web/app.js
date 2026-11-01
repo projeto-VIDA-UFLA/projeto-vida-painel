@@ -192,10 +192,10 @@ function renderTiles(d) {
 const row = (a, b) => `<div class="r"><span>${esc(a)}</span><b>${b}</b></div>`;
 function renderCards(d) {
   const ck = d.checks, ok = ck.items.filter((c) => c.ok).length, total = ck.items.length;
-  $("chkTitle").textContent = ck.automatic ? ck.title : `Para executar ${d.selected ? "a " + short(d.selected) : "uma rota"}`;
-  $("chkCount").textContent = ck.ready ? `${ok} de ${total}` : `faltam ${total - ok}`;
+  $("chkTitle").textContent = ck.no_route ? "Sem rota: modo manual" : ck.automatic ? ck.title : `Para executar a ${short(d.selected)}`;
+  $("chkCount").textContent = ck.no_route ? "" : ck.ready ? `${ok} de ${total}` : `faltam ${total - ok}`;
   const big = $("chkBig");
-  big.hidden = ck.automatic && ck.ready;
+  big.hidden = (ck.automatic && ck.ready) || ck.no_route;
   big.textContent = ck.ready ? "PRONTO" : "NÃO PRONTO";
   big.classList.toggle("okb", ck.ready);
   // "Navegação no ar" só aparece quando falta: é o mesmo tamanho da tela aprovada.
@@ -236,7 +236,7 @@ function renderCards(d) {
   const btn = $("btnCar"), running = d.car.running;
   btn.textContent = d.busy ? "Aguarde" : running ? "■ Parar" : "▶ Iniciar";
   btn.className = "stop" + (running ? "" : " go");
-  btn.disabled = d.busy || !!d.recording;
+  btn.disabled = d.busy || !!d.recording || !!d.bags?.playing;
   $("carText").textContent = d.busy ? "Trocando o estado do carro" : running ? `Carro em execução${d.car.navigation ? "" : " · sem rota"}` : "Carro parado";
 
   const pos = d.position, auto = d.mode.automatic && pos.cross_track !== null;
@@ -255,22 +255,51 @@ function renderCards(d) {
   }
   const rec = d.recording, recBox = $("recBox");
   recBox.hidden = !rec;
-  $("btnRecord").hidden = !!rec;
+  $("btnRecord").hidden = !!rec || $("tabBags").classList.contains("on");
   if (rec) {
     const info = recBox.querySelector("span") || (recBox.innerHTML = '<span></span><button id="btnRecStop">■ Parar gravação</button>', $("btnRecStop").onclick = stopRecording, recBox.querySelector("span"));
     info.textContent = `● Gravando ${rec.name} · ${num(rec.length_m)} m · ${Math.floor(rec.seconds / 60)}:${String(rec.seconds % 60).padStart(2, "0")}`;
   }
+  renderBagBars(d.bags);
   $("topRoute").textContent = d.selected ? `Rota: ${short(d.selected)}` : "Sem rota";
   if (d.selected !== last?.selected_seen) { loadRoutes(); }
   d.selected_seen = d.selected;
 }
 
 function renderRoutes(selected) {
-  setHtml($("routes"), routes.map((r) => {
+  const none = `<div class="rl rlp${selected ? "" : " cur"}" data-id=""><b>Nenhuma</b><em>só modo manual</em>${selected ? "" : '<span class="tag">selecionada</span>'}</div>`;
+  setHtml($("routes"), none + routes.map((r) => {
     const cur = r.id === selected;
-    const tag = cur ? '<span class="tag">selecionada</span>' : r.warning ? `<span class="warnt">${esc(r.warning)}</span>` : "";
-    return `<button class="rl${cur ? " cur" : ""}" data-id="${esc(r.id)}"><b>${esc(r.name)}</b><em>${r.folder.slice(8, 10)}/${r.folder.slice(5, 7)} · ${r.length_m} m</em>${tag}</button>`;
-  }).join("") || '<div class="none">Nenhuma rota salva</div>');
+    const tag = cur ? '<span class="tag">selecionada</span>' : r.warning ? `<span class="warnt" title="${esc(r.warning)}">!</span>` : "";
+    return `<div class="rl rlp${cur ? " cur" : ""}" data-id="${esc(r.id)}"><b>${esc(r.name)}</b><em>${r.folder.slice(8, 10)}/${r.folder.slice(5, 7)} · ${r.length_m} m${r.warning ? " · " + esc(r.warning) : ""}</em><span class="act">${tag}<button class="ic" data-act="rename" title="Renomear">✎</button><button class="ic del" data-act="delete" title="Excluir">✕</button></span></div>`;
+  }).join(""));
+}
+
+let bagList = { bags: [] };
+async function loadBags() {
+  bagList = await (await fetch("/api/bags")).json();
+  const free = bagList.free_gb === null ? "" : `<div class="none">${num(bagList.free_gb, 1)} GB livres</div>`;
+  setHtml($("bags"), bagList.bags.map((b) => `<div class="rl" data-bag="${esc(b.name)}"><b>${esc(b.name)}</b><em>${b.seconds === null ? "?" : Math.floor(b.seconds / 60) + ":" + String(Math.round(b.seconds % 60)).padStart(2, "0")} · ${b.size_mb} MB</em><span class="act"><button class="ic pl" data-act="play" title="Reproduzir">▶</button></span></div>`).join("") + free || '<div class="none">Nenhum bag salvo</div>');
+}
+function setTab(name) {
+  const bags = name === "bags";
+  $("tabRoutes").classList.toggle("on", !bags); $("tabBags").classList.toggle("on", bags);
+  $("routes").hidden = bags; $("bags").hidden = !bags;
+  $("btnRecord").hidden = bags || !!last?.recording; $("btnBagRecord").hidden = !bags || !!last?.bags?.recording;
+  if (bags) loadBags();
+}
+function renderBagBars(b) {
+  const rec = $("bagRecBox"), play = $("bagPlayBox");
+  rec.hidden = !b.recording; play.hidden = !b.playing;
+  if (b.recording) {
+    const t = b.recording.seconds;
+    setHtml(rec, `<span>● Gravando bag ${esc(b.recording.name)} · ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}</span><button data-bagact="recstop">■ Parar</button>`);
+  } else rec._html = "";
+  if (b.playing) {
+    setHtml(play, `<span>▶ ${esc(b.playing.name)}${b.playing.paused ? " · pausado" : ""}</span><span><button data-bagact="pause">${b.playing.paused ? "▶ Continuar" : "❚❚ Pausar"}</button><button data-bagact="stop">■ Parar</button></span>`);
+  } else play._html = "";
+  if (!$("tabBags").classList.contains("on")) return;
+  $("btnBagRecord").hidden = !!b.recording;
 }
 
 // ---------------------------------------------------------------- dados
@@ -339,15 +368,47 @@ $("btnCar").onclick = () => {
   }
 };
 $("routes").addEventListener("click", (event) => {
-  const b = event.target.closest(".rl");
-  if (!b || !last || b.dataset.id === last.selected) return;
-  const id = b.dataset.id, name = short(id), route = routes.find((r) => r.id === id);
+  const rowEl = event.target.closest(".rl");
+  if (!rowEl || !last) return;
+  const id = rowEl.dataset.id || null, act = event.target.dataset.act;
+  if (act === "rename") {
+    const name = short(id);
+    dialog(`Renomear ${esc(name)}`, `Novo nome:<input id="newName" value="${esc(name)}" maxlength="40">`, [["Cancelar"], ["Renomear", "p", async () => { const r = await post("/api/route/rename", { id, name: $("newName").value }); if (r) await loadRoutes(); }]]);
+    return;
+  }
+  if (act === "delete") {
+    dialog(`Excluir ${esc(short(id))}?`, "A rota sai da lista e vai para a pasta <b>analises/.lixeira</b>, de onde ainda dá para recuperar.", [["Cancelar"], ["Excluir", "d", async () => { const r = await post("/api/route/delete", { id }); if (r) await loadRoutes(); }]]);
+    return;
+  }
+  if (id === (last.selected || null)) return;
+  const route = routes.find((item) => item.id === id);
   const warning = route?.warning ? `<p><b>Atenção:</b> esta rota foi ${esc(route.warning)}. Não use no automático sem conferir.</p>` : "";
-  const select = async () => { const r = await post("/api/select", { id }); if (r) { await loadRoutes(); } };
-  if (last.car.running) dialog(`Trocar para ${esc(name)}?`, `${warning}A navegação reinicia, e o gamepad para por alguns segundos.`, [["Cancelar"], ["Trocar", "p", select]]);
-  else if (warning) dialog(`Selecionar ${esc(name)}?`, warning, [["Cancelar"], ["Selecionar", "p", select]]);
+  const select = async () => { const res = await post("/api/select", { id }); if (res) await loadRoutes(); };
+  const title = id ? `Trocar para ${esc(short(id))}?` : "Ficar sem rota?";
+  if (last.car.running && (id || last.car.navigation)) dialog(title, `${warning}A navegação reinicia, e o gamepad para por alguns segundos.`, [["Cancelar"], ["Trocar", "p", select]]);
+  else if (warning) dialog(title, warning, [["Cancelar"], ["Selecionar", "p", select]]);
   else select();
 });
+$("tabRoutes").onclick = () => setTab("routes");
+$("tabBags").onclick = () => setTab("bags");
+$("btnBagRecord").onclick = async () => {
+  const info = await (await fetch("/api/bags")).json();
+  dialog("Gravar bag", `Grava todos os tópicos até você clicar em Parar. ${info.free_gb === null ? "" : `Há ${num(info.free_gb, 1)} GB livres.`}<br>Nome:<input id="bagName" value="${esc(info.next_name)}" maxlength="60">`,
+    [["Cancelar"], ["Começar a gravar", "p", () => post("/api/bag/record/start", { name: $("bagName").value })]]);
+};
+$("bags").addEventListener("click", (event) => {
+  const name = event.target.closest(".rl")?.dataset.bag;
+  if (!name || event.target.dataset.act !== "play") return;
+  dialog(`Reproduzir ${esc(name)}?`, "Só funciona com o Odroid fora da rede e o carro parado no painel: o bag repete os comandos gravados.", [["Cancelar"], ["Reproduzir", "p", () => post("/api/bag/play", { name })]]);
+});
+const bagAction = async (event) => {
+  const act = event.target.dataset.bagact;
+  if (act === "recstop") { await post("/api/bag/record/stop"); loadBags(); }
+  if (act === "pause") await post("/api/bag/pause");
+  if (act === "stop") await post("/api/bag/stop");
+};
+$("bagRecBox").addEventListener("click", bagAction);
+$("bagPlayBox").addEventListener("click", bagAction);
 // Só apaga o histórico: flag ativa continua na lista até ser resolvida no carro.
 $("btnClearErrors").onclick = () => post("/api/errors/clear");
 $("btnRecord").onclick = async () => {

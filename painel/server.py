@@ -10,6 +10,7 @@ import urllib.request
 from aiohttp import WSMsgType, web
 
 from painel import routes as routelib
+from painel.bags import BagManager
 from painel.bridge import start_ros
 from painel.control import DockerControl
 
@@ -50,6 +51,7 @@ class App:
         self.selected = self._load_state()
         self.busy = False
         self.failed_tiles = {}
+        self.bags = BagManager()
         if self.selected:
             self._apply_route(self.selected)
 
@@ -68,6 +70,10 @@ class App:
             json.dump({"route": self.selected}, stream)
 
     def _apply_route(self, route_id):
+        if route_id is None:
+            self.bridge.set_route(None)
+            self.selected = None
+            return
         try:
             self.bridge.set_route(routelib.load_points(route_id))
             self.selected = route_id
@@ -107,6 +113,7 @@ class App:
         data = self.bridge.snapshot(self.car_status)
         data["selected"] = self.selected
         data["busy"] = self.busy
+        data["bags"] = self.bags.status()
         return data
 
     # -------------------------------------------------------- páginas
@@ -146,6 +153,8 @@ class App:
             raise web.HTTPConflict(text=f"Não é possível agora: {reason}.")
         if self.bridge.recorder.active:
             raise web.HTTPConflict(text="Pare a gravação da rota antes.")
+        if self.bags.playing:
+            raise web.HTTPConflict(text="Pare a reprodução do bag antes: os dados dele se misturariam com os do carro.")
 
     async def _do(self, action):
         if self.busy:
@@ -176,20 +185,103 @@ class App:
 
     async def select(self, request):
         body = await request.json()
-        route_id = body.get("id", "")
-        try:
-            routelib.resolve(route_id)
-        except ValueError as error:
-            raise web.HTTPBadRequest(text=str(error))
+        route_id = body.get("id") or None
+        if route_id is not None:
+            try:
+                routelib.resolve(route_id)
+            except ValueError as error:
+                raise web.HTTPBadRequest(text=str(error))
         self._guard()
-        was_running = self.car_status.get("manual") or self.car_status.get("navigation")
-        if was_running:
+        navigation = self.car_status.get("navigation")
+        running = self.car_status.get("manual") or navigation
+        restarted = False
+        if route_id is not None and running:
             await self._do(lambda: self.control.start_navigation(route_id))
+            restarted = True
+        elif route_id is None and navigation:
+            await self._do(self.control.start_manual)
+            restarted = True
         self._apply_route(route_id)
         self._save_state()
-        self.bridge.event(f"Rota {os.path.basename(route_id)[:-4]} selecionada")
-        asyncio.get_running_loop().run_in_executor(None, self.prefetch_tiles)
-        return web.json_response({"ok": True, "restarted": bool(was_running)})
+        self.bridge.event(f"Rota {os.path.basename(route_id)[:-4]} selecionada" if route_id else "Sem rota: só modo manual")
+        if route_id:
+            asyncio.get_running_loop().run_in_executor(None, self.prefetch_tiles)
+        return web.json_response({"ok": True, "restarted": restarted})
+
+    def _not_running(self, route_id):
+        if self.car_status.get("route") == route_id:
+            raise web.HTTPConflict(text="Esta rota está em uso na navegação. Clique em Parar ou troque de rota antes.")
+
+    async def route_rename(self, request):
+        body = await request.json()
+        route_id = body.get("id", "")
+        self._not_running(route_id)
+        try:
+            new_id = routelib.rename_route(route_id, body.get("name"))
+        except (OSError, ValueError) as error:
+            raise web.HTTPBadRequest(text=str(error))
+        if self.selected == route_id:
+            self._apply_route(new_id)
+            self._save_state()
+        self.bridge.event(f"Rota {os.path.basename(route_id)[:-4]} renomeada para {os.path.basename(new_id)[:-4]}")
+        return web.json_response({"ok": True, "id": new_id})
+
+    async def route_delete(self, request):
+        body = await request.json()
+        route_id = body.get("id", "")
+        self._not_running(route_id)
+        try:
+            trash = routelib.delete_route(route_id)
+        except (OSError, ValueError) as error:
+            raise web.HTTPBadRequest(text=str(error))
+        if self.selected == route_id:
+            self._apply_route(None)
+            self._save_state()
+        self.bridge.event(f"Rota {os.path.basename(route_id)[:-4]} excluída")
+        return web.json_response({"ok": True, "trash": trash})
+
+    # -------------------------------------------------------- bags
+    async def api_bags(self, request):
+        return web.json_response(self.bags.listing())
+
+    async def bag_record_start(self, request):
+        body = await request.json()
+        try:
+            name = await self.bags.start_record(body.get("name"))
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error))
+        self.bridge.event(f"Gravação do bag {name} iniciada")
+        return web.json_response({"ok": True, "name": name})
+
+    async def bag_record_stop(self, request):
+        name = await self.bags.stop_record()
+        self.bridge.event(f"Bag {name} salvo")
+        return web.json_response({"ok": True, "name": name})
+
+    async def bag_play(self, request):
+        body = await request.json()
+        # O bag repete as referências de tração e esterçamento: com o carro no
+        # ar elas chegariam ao ESP32. Só com o Odroid fora da rede.
+        with self.bridge.lock:
+            ping, esp_live = self.bridge.odroid_ping, self.bridge.esp_live and not self.bridge.replay
+        if ping is not False or esp_live:
+            raise web.HTTPConflict(text="Reprodução bloqueada: o Odroid está respondendo. O bag enviaria comandos ao carro. Desligue o Odroid ou desconecte o cabo.")
+        if self.car_status.get("manual") or self.car_status.get("navigation"):
+            raise web.HTTPConflict(text="Clique em Parar antes: a navegação no ar se misturaria com os dados do bag.")
+        try:
+            name = await self.bags.play(body.get("name"))
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error))
+        self.bridge.event(f"Reprodução do bag {name} iniciada")
+        return web.json_response({"ok": True})
+
+    async def bag_pause(self, request):
+        return web.json_response({"ok": await self.bags.toggle_pause()})
+
+    async def bag_stop(self, request):
+        await self.bags.stop_play()
+        self.bridge.event("Reprodução do bag parada")
+        return web.json_response({"ok": True})
 
     async def record_start(self, request):
         body = await request.json()
@@ -286,6 +378,14 @@ def build_app(bridge, control):
     app.router.add_post("/api/stop", state.stop)
     app.router.add_post("/api/select", state.select)
     app.router.add_post("/api/errors/clear", state.clear_errors)
+    app.router.add_post("/api/route/rename", state.route_rename)
+    app.router.add_post("/api/route/delete", state.route_delete)
+    app.router.add_get("/api/bags", state.api_bags)
+    app.router.add_post("/api/bag/record/start", state.bag_record_start)
+    app.router.add_post("/api/bag/record/stop", state.bag_record_stop)
+    app.router.add_post("/api/bag/play", state.bag_play)
+    app.router.add_post("/api/bag/pause", state.bag_pause)
+    app.router.add_post("/api/bag/stop", state.bag_stop)
     app.router.add_post("/api/record/start", state.record_start)
     app.router.add_post("/api/record/stop", state.record_stop)
     app.router.add_get(r"/tiles/{z:\d+}/{y:\d+}/{x:\d+}", state.tile)

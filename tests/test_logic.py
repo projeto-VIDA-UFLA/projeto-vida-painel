@@ -149,6 +149,48 @@ def test_recorder_saves_and_lists(tmp_path):
         rec.start(0.0, "../fora")
 
 
+def test_rename_and_delete_route(tmp_path):
+    rec = routes.RouteRecorder(str(tmp_path))
+    rec.start(0.0)
+    lat, lon = circle(noise=0.005)
+    for a, b in zip(lat, lon):
+        rec.add(float(a), float(b), True)
+    route_id = rec.finish(dt.date(2026, 11, 2))["id"]
+    new_id = routes.rename_route(route_id, "pista_kart", str(tmp_path))
+    assert new_id == "2026-11-02/pista_kart.csv"
+    folder = tmp_path / "2026-11-02"
+    assert sorted(p.name for p in folder.iterdir()) == ["pista_kart.csv", "pista_kart_bruta.csv"]
+    assert PathFile.load(folder / "pista_kart.csv").meta["name"] == "pista_kart"
+    for bad in ("../x", "", "pista_kart"):
+        with pytest.raises(ValueError):
+            routes.rename_route(new_id, bad, str(tmp_path))
+    with pytest.raises(ValueError):
+        routes.rename_route("../../etc/passwd", "x", str(tmp_path))
+    trash = routes.delete_route(new_id, str(tmp_path))
+    assert routes.list_routes(str(tmp_path)) == []
+    assert (tmp_path / trash / "pista_kart.csv").exists()     # recuperável
+    with pytest.raises(ValueError):
+        routes.delete_route(new_id, str(tmp_path))
+
+
+def test_bag_list_and_validation(tmp_path):
+    import asyncio
+    from painel.bags import BagManager, list_bags
+    bag = tmp_path / "teste1"
+    bag.mkdir()
+    (bag / "metadata.yaml").write_text("rosbag2_bagfile_information:\n  duration:\n    nanoseconds: 31000000000\n")
+    (tmp_path / "sem_metadata").mkdir()
+    listed = list_bags(str(tmp_path))
+    assert [b["name"] for b in listed] == ["teste1"] and listed[0]["seconds"] == 31
+    manager = BagManager(str(tmp_path))
+    for bad in ("../x", "", "teste1"):
+        with pytest.raises(ValueError):
+            asyncio.run(manager.start_record(bad))
+    with pytest.raises(ValueError):
+        asyncio.run(manager.play("nao_existe"))
+    assert manager.status() == {"recording": None, "playing": None}
+
+
 def test_recorder_rejects_short(tmp_path):
     rec = routes.RouteRecorder(str(tmp_path))
     rec.start(0.0)
