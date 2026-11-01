@@ -148,7 +148,8 @@ def entry_checks(c):
         items.append(check(f"Correção RTK até {_number(c['age_max'])} s", "sem GPS", False))
         items.append(check("RTK com solução", "sem GPS", False))
     items.append(check("EKF rodando", c["phase_text"] if c["ekf_fresh"] else "sem dados", c["ekf_fresh"]))
-    items.append(check("Gamepad conectado", "ok" if c["gamepad_fresh"] else "sem dados", c["gamepad_fresh"]))
+    text = "ok" if c["gamepad_fresh"] else c.get("gamepad_text", "sem dados")
+    items.append(check("Controle conectado", text, c["gamepad_fresh"]))
     waiting = "aguardando Stanley e EKF" if c.get("car_running") else "inicie o carro"
     items.append(check("Navegação no ar", "ok" if c["nav_ready"] else waiting, c["nav_ready"]))
     return items
@@ -163,7 +164,7 @@ HINTS = (
     ("Correção", "confira a internet do celular e do notebook."),
     ("RTK", "espere o RTK sair de NONE."),
     ("EKF", "confira o Odroid."),
-    ("Gamepad", "confira o controle."),
+    ("Controle", "ligue o controle e confira a conexão com o notebook."),
 )
 
 

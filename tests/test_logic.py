@@ -25,7 +25,7 @@ def test_ready_when_all_ok():
 @pytest.mark.parametrize("key,value,label", [
     ("distance", 5.6, "Veículo até"), ("distance", None, "Veículo até"), ("motion_permitted", False, "ESP32"),
     ("stationary", False, "Veículo parado"), ("age", 45.0, "Correção"), ("corrections", False, "Correção"),
-    ("rtk", "NONE", "RTK"), ("gamepad_fresh", False, "Gamepad"), ("nav_ready", False, "Navegação"), ("route", False, "Rota")])
+    ("rtk", "NONE", "RTK"), ("gamepad_fresh", False, "Controle"), ("nav_ready", False, "Navegação"), ("route", False, "Rota")])
 def test_each_condition_blocks(key, value, label):
     c = base()
     c[key] = value
@@ -38,6 +38,15 @@ def test_no_start_hint_when_car_is_running():
     c.update(nav_ready=False, car_running=True)
     items = logic.entry_checks(c)
     assert "Iniciar" not in logic.next_step(items, True) and "Iniciar" in logic.next_step(items, False)
+
+
+def test_controller_off_is_shown():
+    c = base()
+    c.update(gamepad_fresh=False, gamepad_text="desligado")
+    item = [i for i in logic.entry_checks(c) if i["label"] == "Controle conectado"][0]
+    assert item["value"] == "desligado" and not item["ok"]
+    assert "controle" in logic.next_step(logic.entry_checks(c))
+    assert "desligado" in flags.decode(4)[0][2]
 
 
 def test_float_is_accepted_like_mode_manager():

@@ -4,9 +4,9 @@ REARM = "Desligue e religue o enable físico para rearmar."
 
 FLAGS = {
     1: ("enable físico desligado", "Ligue o enable físico para liberar o movimento.", False),
-    2: ("enable lógico não recebido", "Confira o nó security no Odroid.", False),
-    4: ("enable lógico falso", "Confira o gamepad e o nó security.", False),
-    8: ("enable lógico atrasado", "Confira a comunicação com o ESP32.", False),
+    2: ("enable lógico não recebido", "Clique em Iniciar e confira o nó security no Odroid.", False),
+    4: ("enable lógico falso", "O controle está desligado ou sem conexão com o notebook.", False),
+    8: ("enable lógico atrasado", "Confira se o carro foi iniciado e a rede até o Odroid.", False),
     16: ("referência de tração atrasada", "Confira se o carro foi iniciado.", False),
     32: ("referência de esterçamento atrasada", "Confira se o carro foi iniciado.", False),
     64: ("task de sensores parada", "Confira o ESP32.", False),

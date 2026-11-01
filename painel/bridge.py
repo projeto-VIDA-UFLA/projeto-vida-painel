@@ -33,7 +33,7 @@ PHASES = {EkfStatus.PHASE_WAITING_ORIGIN: "aguardando origem", EkfStatus.PHASE_W
 FRESH = {"safety": 0.5, "ekf": 0.5, "gnss": 2.5, "fix": 2.5, "gamepad": 0.3, "nav": 1.0, "encoders": 0.5,
          "steering": 0.5, "battery": 1.0, "ntrip": 5.0, "stanley": 1.0, "odom": 0.3}
 HEALTH = (("Encoders", "encoders"), ("Esterç.", "steering"), ("Segurança", "safety"), ("EKF", "ekf"),
-          ("GPS", "fix"), ("Correções", "rtcm"), ("Bateria", "battery"), ("Gamepad", "gamepad"))
+          ("GPS", "fix"), ("Correções", "rtcm"), ("Bateria", "battery"), ("Gamepad", "joy"))
 TRAIL_MAX = 6000
 LOG_MAX = 200
 LOG_WARN, LOG_ERROR = 30, 40   # níveis de rcl_interfaces/Log
@@ -113,6 +113,7 @@ class Bridge(Node):
                 ("/vida/control/drive/reference", DriveReference, "drive_ref"),
                 ("/vida/control/steering/reference", SteeringReference, "steering_ref"),
                 ("/gamepad/drive/reference", DriveReference, "gamepad"),
+                ("/gamepad/enabled", Bool, "joy"),
                 ("/navigation/mode", NavigationMode, "nav"), ("/navigation/stanley/status", StanleyStatus, "stanley"),
                 ("/vida/sensors/gps/ntrip/diagnostics", DiagnosticArray, "ntrip")):
             self.create_subscription(msg, topic, self._storer(key), qos)
@@ -348,7 +349,14 @@ class Bridge(Node):
         ntrip = self.ntrip_state(now)
         age = float(gnss.correction_age_s) if gnss else None
         rtk = RTK_NAMES.get(gnss.rtk_status, "NONE") if gnss else None
+        # O nó do gamepad segue publicando referências zeradas sem o controle. Quem diz
+        # se o controle está ligado é /gamepad/enabled, a origem do enable lógico.
+        joy = t["joy"].msg if t["joy"].fresh(now, 0.3) else None
         gamepad_fresh = fresh("gamepad") or t["drive_ref"].fresh(now, 0.3)
+        if joy is not None:
+            controller = "conectado" if joy.data else "desligado"
+        else:
+            controller = "sem resposta" if gamepad_fresh else "sem dados"
         automatic = logic.in_automatic(nav_mode)
         steering = t["steering"].msg if fresh("steering") else None
         drive_ref = t["drive_ref"].msg if t["drive_ref"].fresh(now, 1.0) else None
@@ -360,7 +368,7 @@ class Bridge(Node):
             "esp_fresh": safety is not None, "stationary": bool(ekf and ekf.stationary), "ekf_fresh": ekf is not None,
             "age": age, "age_max": self.limits["max_correction_age_s"], "gnss_fresh": gnss is not None,
             "fix_ok": bool(gnss and gnss.gnss_fix_ok), "corrections": bool(gnss and gnss.corrections_received),
-            "rtk": rtk, "gamepad_fresh": gamepad_fresh,
+            "rtk": rtk, "gamepad_fresh": bool(joy is not None and joy.data), "gamepad_text": controller,
             "nav_ready": self.stanley_client.service_is_ready() and self.ekf_client.service_is_ready() and nav is not None,
             "phase_text": PHASES.get(ekf.phase, "") if ekf else "", "car_running": bool(running),
         }
