@@ -83,6 +83,40 @@ class BagManager:
         return {"bags": list_bags(self.root), "free_gb": free,
                 "next_name": dt.datetime.now().strftime("teste_%Y-%m-%d_%H-%M")}
 
+    def _in_use(self, name):
+        if self.recording and self.recording["name"] == name:
+            raise ValueError("este bag está sendo gravado: pare a gravação antes")
+        if self.playing and self.player["name"] == name:
+            raise ValueError("este bag está em reprodução: pare a reprodução antes")
+
+    def _existing(self, name):
+        if not any(b["name"] == name for b in list_bags(self.root)):
+            raise ValueError(f"bag desconhecido: {name}")
+        return os.path.join(self.root, name)
+
+    def rename(self, name, new_name):
+        """Só troca o nome da pasta: o metadata aponta os arquivos pelo caminho relativo."""
+        path = self._existing(name)
+        self._in_use(name)
+        new_name = (new_name or "").strip()
+        if not NAME_RE.match(new_name):
+            raise ValueError("use só letras, números, _ e - no nome do bag")
+        target = os.path.join(self.root, new_name)
+        if os.path.exists(target):
+            raise ValueError(f"já existe um bag chamado {new_name}")
+        os.rename(path, target)
+        return new_name
+
+    def delete(self, name):
+        """Move para .lixeira: um clique errado não perde o teste. Não libera espaço em disco."""
+        path = self._existing(name)
+        self._in_use(name)
+        trash = os.path.join(self.root, ".lixeira", dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+        os.makedirs(trash, exist_ok=True)
+        _chown_tree(os.path.join(self.root, ".lixeira"))
+        os.rename(path, os.path.join(trash, name))
+        return os.path.relpath(trash, self.root)
+
     async def _spawn(self, *command):
         return await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.DEVNULL,
                                                     stderr=asyncio.subprocess.DEVNULL, stdin=asyncio.subprocess.DEVNULL)

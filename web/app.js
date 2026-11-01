@@ -279,7 +279,7 @@ let bagList = { bags: [] };
 async function loadBags() {
   bagList = await (await fetch("/api/bags")).json();
   const free = bagList.free_gb === null ? "" : `<div class="none">${num(bagList.free_gb, 1)} GB livres</div>`;
-  setHtml($("bags"), bagList.bags.map((b) => `<div class="rl" data-bag="${esc(b.name)}"><b>${esc(b.name)}</b><em>${b.seconds === null ? "?" : Math.floor(b.seconds / 60) + ":" + String(Math.round(b.seconds % 60)).padStart(2, "0")} · ${b.size_mb} MB</em><span class="act"><button class="ic pl" data-act="play" title="Reproduzir">▶</button></span></div>`).join("") + free || '<div class="none">Nenhum bag salvo</div>');
+  setHtml($("bags"), bagList.bags.map((b) => `<div class="rl" data-bag="${esc(b.name)}"><b>${esc(b.name)}</b><em>${b.seconds === null ? "?" : Math.floor(b.seconds / 60) + ":" + String(Math.round(b.seconds % 60)).padStart(2, "0")} · ${b.size_mb} MB</em><span class="act"><button class="ic pl" data-act="play" title="Reproduzir">▶</button><button class="ic" data-act="rename" title="Renomear">✎</button><button class="ic del" data-act="delete" title="Excluir">✕</button></span></div>`).join("") + free || '<div class="none">Nenhum bag salvo</div>');
 }
 function setTab(name) {
   const bags = name === "bags";
@@ -399,7 +399,16 @@ $("btnBagRecord").onclick = async () => {
 };
 $("bags").addEventListener("click", (event) => {
   const name = event.target.closest(".rl")?.dataset.bag;
-  if (!name || event.target.dataset.act !== "play") return;
+  const act = event.target.dataset.act;
+  if (!name || !act) return;
+  if (act === "rename") {
+    dialog(`Renomear ${esc(name)}`, `Novo nome:<input id="newName" value="${esc(name)}" maxlength="60">`, [["Cancelar"], ["Renomear", "p", async () => { if (await post("/api/bag/rename", { name, new_name: $("newName").value })) await loadBags(); }]]);
+    return;
+  }
+  if (act === "delete") {
+    dialog(`Excluir ${esc(name)}?`, "O bag sai da lista e vai para a pasta <b>.lixeira</b> dentro da pasta de bags, de onde ainda dá para recuperar. Ele continua ocupando espaço até você apagar essa pasta.", [["Cancelar"], ["Excluir", "d", async () => { if (await post("/api/bag/delete", { name })) await loadBags(); }]]);
+    return;
+  }
   dialog(`Reproduzir ${esc(name)}?`, "Só funciona com o Odroid fora da rede e o carro parado no painel: o bag repete os comandos gravados.", [["Cancelar"], ["Reproduzir", "p", () => post("/api/bag/play", { name })]]);
 });
 const bagAction = async (event) => {

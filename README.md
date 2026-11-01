@@ -38,6 +38,10 @@ O acesso ao Docker do notebook equivale a root. Por isso, o servidor escuta só 
 - **Fechada ou aberta:** fechada quando termina a até 3 m do começo.
 - **Resumo ao salvar:** comprimento, raio mínimo e trecho abaixo de 3,3 m (limite de 20° com entre-eixos de ~1,2 m).
 
+## Bags
+
+Ficam em `VIDA_BAGS_DIR` (padrão `~/rosbag`). Renomear troca só o nome da pasta. Excluir move para `.lixeira` dentro dessa pasta, então o espaço só é liberado ao apagar a lixeira. Um bag em gravação ou reprodução não pode ser renomeado nem excluído.
+
 ## Regras de exibição
 
 - **Pendências:** repetem o `entry_problem` do `mode_manager`, com os limites lidos do `navigation.yaml`. Se ele mudar, mude também `painel/logic.py`.

@@ -244,6 +244,24 @@ class App:
     async def api_bags(self, request):
         return web.json_response(self.bags.listing())
 
+    async def bag_rename(self, request):
+        body = await request.json()
+        try:
+            new_name = self.bags.rename(body.get("name", ""), body.get("new_name"))
+        except (OSError, ValueError) as error:
+            raise web.HTTPBadRequest(text=str(error))
+        self.bridge.event(f"Bag {body.get('name')} renomeado para {new_name}")
+        return web.json_response({"ok": True, "name": new_name})
+
+    async def bag_delete(self, request):
+        body = await request.json()
+        try:
+            trash = self.bags.delete(body.get("name", ""))
+        except (OSError, ValueError) as error:
+            raise web.HTTPBadRequest(text=str(error))
+        self.bridge.event(f"Bag {body.get('name')} excluído")
+        return web.json_response({"ok": True, "trash": trash})
+
     async def bag_record_start(self, request):
         body = await request.json()
         try:
@@ -388,6 +406,8 @@ def build_app(bridge, control):
     app.router.add_get("/api/bags", state.api_bags)
     app.router.add_post("/api/bag/record/start", state.bag_record_start)
     app.router.add_post("/api/bag/record/stop", state.bag_record_stop)
+    app.router.add_post("/api/bag/rename", state.bag_rename)
+    app.router.add_post("/api/bag/delete", state.bag_delete)
     app.router.add_post("/api/bag/play", state.bag_play)
     app.router.add_post("/api/bag/pause", state.bag_pause)
     app.router.add_post("/api/bag/stop", state.bag_stop)

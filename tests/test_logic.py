@@ -191,6 +191,32 @@ def test_bag_list_and_validation(tmp_path):
     assert manager.status() == {"recording": None, "playing": None}
 
 
+def test_bag_rename_and_delete(tmp_path):
+    from painel.bags import BagManager, list_bags
+    bag = tmp_path / "teste1"
+    bag.mkdir()
+    (bag / "metadata.yaml").write_text("rosbag2_bagfile_information:\n  duration:\n    nanoseconds: 1000000000\n")
+    (bag / "teste1_0.db3").write_text("x")
+    manager = BagManager(str(tmp_path))
+    for bad in ("../x", "", "teste1"):
+        with pytest.raises(ValueError):
+            manager.rename("teste1", bad)
+    assert manager.rename("teste1", "pista_1") == "pista_1"
+    assert (tmp_path / "pista_1" / "teste1_0.db3").exists()
+    with pytest.raises(ValueError):
+        manager.rename("../../etc", "x")
+    manager.recording = {"name": "pista_1"}
+    for action in (lambda: manager.rename("pista_1", "y"), lambda: manager.delete("pista_1")):
+        with pytest.raises(ValueError):
+            action()
+    manager.recording = None
+    trash = manager.delete("pista_1")
+    assert list_bags(str(tmp_path)) == []
+    assert (tmp_path / trash / "pista_1" / "metadata.yaml").exists()
+    with pytest.raises(ValueError):
+        manager.delete("pista_1")
+
+
 def test_recorder_rejects_short(tmp_path):
     rec = routes.RouteRecorder(str(tmp_path))
     rec.start(0.0)
