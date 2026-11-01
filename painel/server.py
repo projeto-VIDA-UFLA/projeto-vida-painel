@@ -1,0 +1,282 @@
+"""Servidor web do painel: página, WebSocket com os dados e as ações de operação."""
+import asyncio
+import json
+import os
+import time
+import urllib.error
+import urllib.request
+
+from aiohttp import WSMsgType, web
+
+from painel import routes as routelib
+from painel.bridge import start_ros
+from painel.control import DockerControl
+
+PORT = int(os.environ.get("VIDA_PAINEL_PORT", "8080"))
+HOST = "127.0.0.1"
+WEB = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web")
+DATA = os.environ.get("VIDA_PAINEL_DATA", "/data")
+TILES = os.path.join(DATA, "tiles")
+STATE = os.path.join(DATA, "state.json")
+TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+TILE_ZOOM = 18
+RATE_S = 0.1
+
+
+def allowed_hosts(port=PORT):
+    return {f"localhost:{port}", f"127.0.0.1:{port}"}
+
+
+@web.middleware
+async def only_local(request, handler):
+    """Só o próprio notebook: barra DNS rebinding e pedidos vindos de outros sites."""
+    if request.host not in allowed_hosts():
+        raise web.HTTPForbidden(text="acesso só por localhost")
+    origin = request.headers.get("Origin")
+    if origin and origin.split("://", 1)[-1] not in allowed_hosts():
+        raise web.HTTPForbidden(text="origem não permitida")
+    if request.method == "POST" and not origin:
+        raise web.HTTPForbidden(text="origem ausente")
+    return await handler(request)
+
+
+class App:
+    def __init__(self, bridge, control):
+        self.bridge = bridge
+        self.control = control
+        self.car_status = {"manual": False, "navigation": False, "route": None}
+        self.selected = self._load_state()
+        self.busy = False
+        self.failed_tiles = {}
+        if self.selected:
+            self._apply_route(self.selected)
+
+    # -------------------------------------------------------- estado
+    @staticmethod
+    def _load_state():
+        try:
+            with open(STATE, encoding="utf-8") as stream:
+                return json.load(stream).get("route")
+        except (OSError, ValueError):
+            return None
+
+    def _save_state(self):
+        os.makedirs(DATA, exist_ok=True)
+        with open(STATE, "w", encoding="utf-8") as stream:
+            json.dump({"route": self.selected}, stream)
+
+    def _apply_route(self, route_id):
+        try:
+            self.bridge.set_route(routelib.load_points(route_id))
+            self.selected = route_id
+        except (OSError, ValueError):
+            self.bridge.set_route(None)
+            self.selected = None
+
+    async def poll_car(self):
+        while True:
+            try:
+                self.car_status = await self.control.status()
+                running = self.car_status.get("route")
+                if running and running != self.selected:
+                    self._apply_route(running)
+            except OSError:
+                pass
+            await asyncio.sleep(2.0)
+
+    def snapshot(self):
+        data = self.bridge.snapshot(self.car_status)
+        data["selected"] = self.selected
+        data["busy"] = self.busy
+        return data
+
+    # -------------------------------------------------------- páginas
+    async def index(self, request):
+        return web.FileResponse(os.path.join(WEB, "index.html"), headers={"Cache-Control": "no-cache"})
+
+    async def api_routes(self, request):
+        return web.json_response({"routes": routelib.list_routes(), "selected": self.selected,
+                                  "next_name": routelib.next_name()})
+
+    async def api_route(self, request):
+        route_id = request.query.get("id", "")
+        try:
+            return web.json_response(routelib.load_points(route_id))
+        except ValueError as error:
+            raise web.HTTPNotFound(text=str(error))
+
+    async def websocket(self, request):
+        socket = web.WebSocketResponse(heartbeat=10.0)
+        await socket.prepare(request)
+        generation, index = -1, 0
+        try:
+            while not socket.closed:
+                data = self.snapshot()
+                generation, index, tail, reset = self.bridge.trail_since(generation, index)
+                data["trail"] = {"points": tail, "reset": reset}
+                await socket.send_str(json.dumps(data, allow_nan=False))
+                await asyncio.sleep(RATE_S)
+        except (ConnectionResetError, asyncio.CancelledError):
+            pass
+        return socket
+
+    # -------------------------------------------------------- ações
+    def _guard(self):
+        reason = self.bridge.snapshot(self.car_status)["blocked"]
+        if reason:
+            raise web.HTTPConflict(text=f"Não é possível agora: {reason}.")
+        if self.bridge.recorder.active:
+            raise web.HTTPConflict(text="Pare a gravação da rota antes.")
+
+    async def _do(self, action):
+        if self.busy:
+            raise web.HTTPConflict(text="Aguarde a operação anterior terminar.")
+        self.busy = True
+        try:
+            await action()
+            self.car_status = await self.control.status()
+        except RuntimeError as error:
+            raise web.HTTPInternalServerError(text=f"Falha no Docker: {error}")
+        finally:
+            self.busy = False
+
+    async def start(self, request):
+        self._guard()
+        route = self.selected
+        await self._do((lambda: self.control.start_navigation(route)) if route else self.control.start_manual)
+        self.bridge.event(f"Carro iniciado com {os.path.basename(route)[:-4]}" if route else "Carro iniciado sem rota")
+        return web.json_response({"ok": True})
+
+    async def stop(self, request):
+        # Parar é permitido em qualquer modo: sem referências, o ESP32 aplica o freio.
+        if self.bridge.recorder.active:
+            raise web.HTTPConflict(text="Pare a gravação da rota antes.")
+        await self._do(self.control.stop)
+        self.bridge.event("Carro parado pelo painel")
+        return web.json_response({"ok": True})
+
+    async def select(self, request):
+        body = await request.json()
+        route_id = body.get("id", "")
+        try:
+            routelib.resolve(route_id)
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error))
+        self._guard()
+        was_running = self.car_status.get("manual") or self.car_status.get("navigation")
+        if was_running:
+            await self._do(lambda: self.control.start_navigation(route_id))
+        self._apply_route(route_id)
+        self._save_state()
+        self.bridge.event(f"Rota {os.path.basename(route_id)[:-4]} selecionada")
+        asyncio.get_running_loop().run_in_executor(None, self.prefetch_tiles)
+        return web.json_response({"ok": True, "restarted": bool(was_running)})
+
+    async def record_start(self, request):
+        body = await request.json()
+        snapshot = self.bridge.snapshot(self.car_status)
+        if snapshot["mode"]["automatic"]:
+            raise web.HTTPConflict(text="Não dá para gravar durante o automático.")
+        try:
+            with self.bridge.lock:
+                name = self.bridge.recorder.start(time.time(), body.get("name") or None)
+                self.bridge.event(f"Gravação iniciada: {name}")
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error))
+        return web.json_response({"ok": True, "name": name})
+
+    async def record_stop(self, request):
+        body = await request.json()
+        with self.bridge.lock:
+            if not self.bridge.recorder.active:
+                raise web.HTTPConflict(text="Nenhuma gravação em andamento.")
+            if not body.get("save", True):
+                name = self.bridge.recorder.name
+                self.bridge.recorder.discard()
+                self.bridge.event(f"Gravação descartada: {name}")
+                return web.json_response({"ok": True, "saved": False})
+            try:
+                summary = self.bridge.recorder.finish()
+            except (OSError, ValueError) as error:
+                raise web.HTTPBadRequest(text=str(error))
+            self.bridge.event(f"Rota {summary['name']} salva: {summary['length_m']} m")
+        return web.json_response({"ok": True, "saved": True, "summary": summary})
+
+    # -------------------------------------------------------- mapa
+    def fetch_tile(self, z, y, x):
+        """Guarda a imagem no disco: na pista, sem internet, usa a cópia salva."""
+        path = os.path.join(TILES, f"{z}_{y}_{x}.jpg")
+        if os.path.exists(path):
+            return path
+        key = (z, y, x)
+        if time.time() - self.failed_tiles.get(key, 0.0) < 60.0:
+            return None
+        request = urllib.request.Request(TILE_URL.format(z=z, y=y, x=x), headers={"User-Agent": "vida-painel/1.0"})
+        try:
+            with urllib.request.urlopen(request, timeout=6) as response:
+                content = response.read()
+        except (urllib.error.URLError, OSError, ValueError):
+            self.failed_tiles[key] = time.time()
+            return None
+        os.makedirs(TILES, exist_ok=True)
+        temporary = path + ".tmp"
+        with open(temporary, "wb") as stream:
+            stream.write(content)
+        os.replace(temporary, path)
+        return path
+
+    def prefetch_tiles(self):
+        import math
+        route = self.bridge.route
+        if not route:
+            return
+        scale = 2 ** TILE_ZOOM
+        columns, rows = [], []
+        for latitude, longitude in route["points"]:
+            columns.append((longitude + 180.0) / 360.0 * scale)
+            rows.append((1.0 - math.log(math.tan(math.radians(latitude)) + 1.0 / math.cos(math.radians(latitude))) / math.pi) / 2.0 * scale)
+        for x in range(int(min(columns)) - 1, int(max(columns)) + 2):
+            for y in range(int(min(rows)) - 1, int(max(rows)) + 2):
+                self.fetch_tile(TILE_ZOOM, y, x)
+
+    async def tile(self, request):
+        z, y, x = (int(request.match_info[k]) for k in ("z", "y", "x"))
+        if z != TILE_ZOOM or not (0 <= x < 2 ** z and 0 <= y < 2 ** z):
+            raise web.HTTPBadRequest()
+        path = await asyncio.get_running_loop().run_in_executor(None, self.fetch_tile, z, y, x)
+        if path is None:
+            raise web.HTTPServiceUnavailable(text="sem imagem salva e sem internet")
+        return web.FileResponse(path, headers={"Cache-Control": "max-age=86400"})
+
+
+def build_app(bridge, control):
+    state = App(bridge, control)
+    app = web.Application(middlewares=[only_local])
+    app["state"] = state
+    app.router.add_get("/", state.index)
+    app.router.add_get("/ws", state.websocket)
+    app.router.add_get("/api/routes", state.api_routes)
+    app.router.add_get("/api/route", state.api_route)
+    app.router.add_post("/api/start", state.start)
+    app.router.add_post("/api/stop", state.stop)
+    app.router.add_post("/api/select", state.select)
+    app.router.add_post("/api/record/start", state.record_start)
+    app.router.add_post("/api/record/stop", state.record_stop)
+    app.router.add_get(r"/tiles/{z:\d+}/{y:\d+}/{x:\d+}", state.tile)
+    app.router.add_static("/static", WEB)
+
+    async def background(app):
+        app["poll"] = asyncio.create_task(state.poll_car())
+        asyncio.get_running_loop().run_in_executor(None, state.prefetch_tiles)
+
+    app.on_startup.append(background)
+    return app
+
+
+def main():
+    bridge = start_ros()
+    web.run_app(build_app(bridge, DockerControl()), host=HOST, port=PORT, print=None)
+
+
+if __name__ == "__main__":
+    main()

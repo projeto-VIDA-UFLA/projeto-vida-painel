@@ -1,0 +1,29 @@
+# Painel web do VIDA: http://localhost:8080 (so neste notebook).
+#   docker compose up -d --build
+services:
+  painel:
+    build: .
+    image: vida-painel:humble
+    container_name: vida_painel
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      # Igual ao alto-nivel: sem memoria compartilhada entre container e host.
+      FASTDDS_BUILTIN_TRANSPORTS: UDPv4
+      TZ: America/Sao_Paulo
+      VIDA_PAINEL_PORT: ${VIDA_PAINEL_PORT:-8080}
+      VIDA_PAINEL_DRY_RUN: ${VIDA_PAINEL_DRY_RUN:-0}
+      VIDA_ALTO_NIVEL_DIR: ${VIDA_ALTO_NIVEL_DIR:-${HOME}/projeto-vida/projeto-vida-controle-alto-nivel}
+      VIDA_UID: ${VIDA_UID:-1000}
+    volumes:
+      # Iniciar, parar e trocar a rota usam o docker compose do alto-nivel. O
+      # caminho precisa ser igual ao do host para os volumes dele serem resolvidos.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${VIDA_ALTO_NIVEL_DIR:-${HOME}/projeto-vida/projeto-vida-controle-alto-nivel}:${VIDA_ALTO_NIVEL_DIR:-${HOME}/projeto-vida/projeto-vida-controle-alto-nivel}:ro
+      - ${VIDA_ANALISES_DIR:-${HOME}/projeto-vida/analises}:/caminhos
+      - painel_dados:/data
+
+volumes:
+  painel_dados:

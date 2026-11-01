@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Painel VIDA</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <img class="lgu" src="/static/assets/ufla.png" alt="UFLA">
+    <div class="sp"></div>
+    <div class="m" id="topRoute">Sem rota</div>
+    <div class="live"><i class="dot" id="liveDot"></i><span id="liveText">Conectando</span></div>
+    <div class="m" id="clock"></div>
+    <img class="lgl" src="/static/assets/lmt.png" alt="LMT">
+  </header>
+
+  <section class="st">
+    <div class="t old" id="tSafety"><label>Segurança</label><b>—</b><small>sem dados</small></div>
+    <div class="t old" id="tConn"><label>ESP32 / Odroid</label><b>—</b><small>sem dados</small></div>
+    <div class="t old" id="tRtk"><label>RTK</label><b>—</b><small>sem dados</small></div>
+    <div class="t old" id="tCorr"><label>Correção RTK</label><b>—</b><small>sem dados</small></div>
+    <div class="t old" id="tEkf"><label>EKF</label><b>—</b><small>sem dados</small></div>
+    <div class="t old" id="tBat"><label>Bateria</label>
+      <div class="bi"><svg viewBox="0 0 46 22" width="46" height="22" aria-hidden="true"><rect x="1" y="1" width="39" height="20" rx="4" class="bo"/><rect x="41" y="7" width="4" height="8" rx="1.5" class="bc"/><rect x="4" y="4" width="0" height="14" rx="2" class="bf" id="batFill"/></svg><b id="batPct">—</b><b class="v" id="batV">—</b></div>
+      <small id="batSub">sem dados</small></div>
+  </section>
+
+  <main class="main">
+    <section class="card mp" id="mapCard">
+      <div class="mh"><h2>Posição do veículo</h2>
+        <div class="tg"><button id="vGraph" class="on">Gráfico</button><button id="vGps">Mapa GPS</button></div></div>
+      <div class="mapwrap" id="mapWrap">
+        <svg id="map" xmlns="http://www.w3.org/2000/svg"><g id="tiles"></g><polyline id="rt" class="rt"/><polyline id="tr" class="ex"/><circle id="zone" class="zone"/><circle id="start" class="start"/><text id="startLabel" class="ml">início da rota</text><line id="toStart" class="to"/><text id="toLabel" class="mb"></text><polygon id="car" class="car"/><g id="scale"><line class="sb"/><text class="ml" text-anchor="middle">10 m</text></g></svg>
+        <div class="mapmsg" id="mapMsg"></div>
+      </div>
+      <div class="kp">
+        <div class="k"><label id="k1l">Até o início da rota</label><b id="k1">—</b></div>
+        <div class="k"><label id="k2l">Rumo × rota</label><b id="k2">—</b></div>
+        <div class="k"><label>Velocidade</label><b id="k3">—</b></div>
+        <div class="k"><label>Esterçamento</label><b id="k4">—</b></div>
+      </div>
+      <div class="pr" id="progress" hidden><span>Progresso</span><div class="bar"><i id="progBar"></i></div><b id="progText"></b></div>
+    </section>
+
+    <div class="col mid">
+      <section class="card"><h2><span class="tt" id="chkTitle">Para executar a rota</span><span id="chkCount"></span></h2>
+        <div class="big" id="chkBig" hidden>NÃO PRONTO</div><div id="checks"></div><div class="tip" id="tip" hidden></div></section>
+      <section class="card"><h2>Segurança</h2><div id="safety"></div></section>
+      <section class="card"><h2>Veículo</h2><div id="vehicle"></div></section>
+      <section class="card fixb"><h2>Bateria <span>INA228</span></h2><div id="battery"></div></section>
+    </div>
+
+    <div class="col right">
+      <section class="card rotas"><h2><span class="tt">Rota</span><button class="add" id="btnRecord">+ Nova rota</button></h2>
+        <div class="rec" id="recBox" hidden></div><div class="scroll" id="routes"></div></section>
+      <section class="card fillb"><h2>Erros</h2><div class="scroll err" id="errors"></div></section>
+      <section class="card fillb"><h2>Eventos</h2><div class="scroll ev" id="events"></div></section>
+      <section class="card"><h2>Saúde dos dados</h2><div class="hl" id="health"></div></section>
+      <section class="card op fixb"><h2>Operação</h2>
+        <div class="opr"><div class="md old" id="modeBox"><small id="modeDetail">Modo atual</small><b id="modeLabel">—</b></div>
+          <button class="stop go" id="btnCar" disabled>▶ Iniciar</button></div>
+        <div class="ops" id="carText">Carro parado</div></section>
+    </div>
+  </main>
+  <footer class="foot" id="foot">Painel do VIDA · LMT/UFLA</footer>
+</div>
+
+<div class="modal" id="modal" hidden><div class="box"><h3 id="mTitle"></h3><div id="mBody"></div><div class="mbtns" id="mBtns"></div></div></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
