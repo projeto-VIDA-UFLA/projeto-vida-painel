@@ -17,6 +17,10 @@ pacotes (precisa de internet); depois, ele roda sem internet.
 
 Refaça o build do painel sempre que o build do alto-nível mudar, porque ele usa as mensagens e a navegação de lá.
 
+## Acesso pelo Tailscale (só visualização)
+
+Com `.env` preenchido (modelo em `.env.example`), o painel também responde em `http://<nome>:8080` para os aparelhos da mesma conta Tailscale. Quem entra por lá vê tudo, mas o servidor recusa qualquer comando: a decisão vem do endereço em que a conexão chegou, não da tela. Wi-Fi e cabo continuam fechados. O `.env` não entra no Git.
+
 ## O que o painel faz no carro
 
 Ele só **lê** os tópicos ROS e não publica nada no carro. A troca de modo continua sendo pelo controle.

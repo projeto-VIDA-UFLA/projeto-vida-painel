@@ -3,6 +3,7 @@ import asyncio
 import json
 import os
 import re
+import signal
 import time
 import urllib.error
 import urllib.request
@@ -24,22 +25,43 @@ TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/M
 TILE_ZOOM = 18
 RATE_S = 0.1
 ODROID_IP = os.environ.get("VIDA_ODROID_IP", "192.168.10.1")
+TAILSCALE_IP = os.environ.get("VIDA_PAINEL_TAILSCALE_IP", "")
+REMOTE_NAMES = os.environ.get("VIDA_PAINEL_REMOTE_NAMES", "")
 
 
-def allowed_hosts(port=PORT):
+def allowed_hosts(port=None):
+    port = port or PORT
     return {f"localhost:{port}", f"127.0.0.1:{port}"}
 
 
+def remote_hosts(port=None):
+    """Nomes aceitos pela interface do Tailscale (só visualização)."""
+    port = port or PORT
+    names = [TAILSCALE_IP] + [n.strip().lower() for n in REMOTE_NAMES.split(",") if n.strip()]
+    return {f"{name}:{port}" for name in names if name}
+
+
+def is_local(request):
+    """Vale o endereço em que a conexão chegou: o cliente não consegue forjar."""
+    sockname = request.transport.get_extra_info("sockname") if request.transport else None
+    return bool(sockname) and str(sockname[0]).startswith("127.")
+
+
 @web.middleware
-async def only_local(request, handler):
-    """Só o próprio notebook: barra DNS rebinding e pedidos vindos de outros sites."""
-    if request.host not in allowed_hosts():
-        raise web.HTTPForbidden(text="acesso só por localhost")
+async def access_rules(request, handler):
+    """Comandos só no notebook. Pelo Tailscale só leitura. Barra outros sites e DNS rebinding."""
+    local = is_local(request)
+    hosts = allowed_hosts() if local else remote_hosts()
+    if request.host.lower() not in hosts:
+        raise web.HTTPForbidden(text="endereço não permitido")
     origin = request.headers.get("Origin")
-    if origin and origin.split("://", 1)[-1] not in allowed_hosts():
+    if origin and origin.split("://", 1)[-1].lower() not in hosts:
         raise web.HTTPForbidden(text="origem não permitida")
-    if request.method == "POST" and not origin:
-        raise web.HTTPForbidden(text="origem ausente")
+    if request.method not in ("GET", "HEAD"):
+        if not local:
+            raise web.HTTPForbidden(text="somente visualização: os comandos ficam no notebook")
+        if not origin:
+            raise web.HTTPForbidden(text="origem ausente")
     return await handler(request)
 
 
@@ -135,11 +157,13 @@ class App:
         socket = web.WebSocketResponse(heartbeat=10.0)
         await socket.prepare(request)
         generation, index = -1, 0
+        readonly = not is_local(request)
         try:
             while not socket.closed:
                 data = self.snapshot()
                 generation, index, tail, reset = self.bridge.trail_since(generation, index)
                 data["trail"] = {"points": tail, "reset": reset}
+                data["readonly"] = readonly
                 await socket.send_str(json.dumps(data, allow_nan=False))
                 await asyncio.sleep(RATE_S)
         except (ConnectionResetError, asyncio.CancelledError):
@@ -390,7 +414,7 @@ class App:
 
 def build_app(bridge, control):
     state = App(bridge, control)
-    app = web.Application(middlewares=[only_local])
+    app = web.Application(middlewares=[access_rules])
     app["state"] = state
     app.router.add_get("/", state.index)
     app.router.add_get("/ws", state.websocket)
@@ -421,13 +445,44 @@ def build_app(bridge, control):
         app["link"] = asyncio.create_task(state.poll_link())
         asyncio.get_running_loop().run_in_executor(None, state.prefetch_tiles)
 
+    async def close_bags(app):
+        # Um bag só fica íntegro se o ros2 bag fechar o arquivo: não perde a gravação ao reiniciar.
+        await state.bags.stop_record()
+        await state.bags.stop_play()
+
     app.on_startup.append(background)
+    app.on_shutdown.append(close_bags)
     return app
 
 
-def main():
+async def bind_tailscale(runner):
+    """O Tailscale pode subir depois do painel: tenta até conseguir, sem derrubar o local."""
+    while TAILSCALE_IP:
+        try:
+            await web.TCPSite(runner, TAILSCALE_IP, PORT).start()
+            print(f"painel também em {TAILSCALE_IP}:{PORT} (só visualização)", flush=True)
+            return
+        except OSError:
+            await asyncio.sleep(10.0)
+
+
+async def serve():
     bridge = start_ros()
-    web.run_app(build_app(bridge, DockerControl()), host=HOST, port=PORT, print=None)
+    runner = web.AppRunner(build_app(bridge, DockerControl()), handle_signals=False)
+    await runner.setup()
+    await web.TCPSite(runner, HOST, PORT).start()
+    binder = asyncio.create_task(bind_tailscale(runner))
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for number in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(number, stop.set)
+    await stop.wait()
+    binder.cancel()
+    await runner.cleanup()
+
+
+def main():
+    asyncio.run(serve())
 
 
 if __name__ == "__main__":

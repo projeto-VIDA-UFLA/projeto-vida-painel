@@ -329,6 +329,8 @@ function connect() {
     if (d.trail.reset || d.trail.points.length) drawTrail();
     d.selected_seen = last?.selected_seen;
     last = d;
+    document.body.classList.toggle("ro", !!d.readonly);
+    $("roBadge").hidden = !d.readonly;
     renderTiles(d); renderCards(d); drawMap();
     const ok = d.tiles.safety.on || d.tiles.rtk.on;
     $("liveDot").className = "dot " + (d.replay ? "replay" : ok ? "on" : "off");
@@ -374,7 +376,7 @@ $("btnCar").onclick = () => {
 };
 $("routes").addEventListener("click", (event) => {
   const rowEl = event.target.closest(".rl");
-  if (!rowEl || !last) return;
+  if (!rowEl || !last || last.readonly) return;
   const id = rowEl.dataset.id || null, act = event.target.dataset.act;
   if (act === "rename") {
     const name = short(id);

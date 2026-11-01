@@ -282,6 +282,48 @@ def test_clear_trail_reaches_open_pages():
     assert Bridge.trail_since(bridge, 1, 0)[2] == [(3, 3)]
 
 
+def _request(sockname, host, origin=None, method="GET"):
+    from types import SimpleNamespace
+    from aiohttp.test_utils import make_mocked_request
+    headers = {"Host": host}
+    if origin:
+        headers["Origin"] = origin
+    transport = SimpleNamespace(get_extra_info=lambda name, default=None: (sockname, 8080) if name == "sockname" else default)
+    return make_mocked_request(method, "/", headers=headers, transport=transport)
+
+
+@pytest.mark.parametrize("sockname,host,origin,method,allowed", [
+    ("127.0.0.1", "localhost:8080", None, "GET", True),
+    ("127.0.0.1", "localhost:8080", "http://localhost:8080", "POST", True),
+    ("127.0.0.1", "localhost:8080", None, "POST", False),                  # sem origem
+    ("127.0.0.1", "localhost:8080", "http://mau.example", "POST", False),
+    ("127.0.0.1", "notebook-vida:8080", None, "GET", False),                  # DNS rebinding
+    ("100.64.0.10", "notebook-vida:8080", None, "GET", True),
+    ("100.64.0.10", "Notebook-Vida:8080", None, "GET", True),
+    ("100.64.0.10", "100.64.0.10:8080", None, "GET", True),
+    ("100.64.0.10", "notebook-vida:8080", "http://notebook-vida:8080", "POST", False),   # só visualização
+    ("100.64.0.10", "localhost:8080", "http://localhost:8080", "POST", False),     # forjar Host não dá comando
+    ("100.64.0.10", "localhost:8080", None, "GET", False),
+    ("100.64.0.10", "outro:8080", None, "GET", False),
+])
+def test_access_rules(monkeypatch, sockname, host, origin, method, allowed):
+    import asyncio
+    from aiohttp import web
+    from painel import server
+    monkeypatch.setattr(server, "PORT", 8080)
+    monkeypatch.setattr(server, "TAILSCALE_IP", "100.64.0.10")
+    monkeypatch.setattr(server, "REMOTE_NAMES", "notebook-vida,notebook-vida.exemplo.ts.net")
+    async def handler(request):
+        return "ok"
+    async def call():
+        return await server.access_rules(_request(sockname, host, origin, method), handler)
+    if allowed:
+        assert asyncio.run(call()) == "ok"
+    else:
+        with pytest.raises(web.HTTPForbidden):
+            asyncio.run(call())
+
+
 def test_compose_commands_are_fixed():
     control = DockerControl("/projeto", dry_run=True)
     import asyncio

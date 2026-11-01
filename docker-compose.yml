@@ -6,6 +6,8 @@ services:
     image: vida-painel:humble
     container_name: vida_painel
     restart: unless-stopped
+    # Tempo para fechar um bag em gravação antes de o Docker encerrar o painel.
+    stop_grace_period: 25s
     network_mode: host
     ipc: host
     environment:
@@ -18,6 +20,9 @@ services:
       VIDA_ALTO_NIVEL_DIR: ${VIDA_ALTO_NIVEL_DIR:-${HOME}/projeto-vida/projeto-vida-controle-alto-nivel}
       VIDA_UID: ${VIDA_UID:-1000}
       VIDA_ODROID_IP: ${VIDA_ODROID_IP:-192.168.10.1}
+      # Só visualização pelo Tailscale. Vazio: painel só no notebook. Ver .env.example.
+      VIDA_PAINEL_TAILSCALE_IP: ${VIDA_PAINEL_TAILSCALE_IP:-}
+      VIDA_PAINEL_REMOTE_NAMES: ${VIDA_PAINEL_REMOTE_NAMES:-}
     volumes:
       # Iniciar, parar e trocar a rota usam o docker compose do alto-nivel. O
       # caminho precisa ser igual ao do host para os volumes dele serem resolvidos.
