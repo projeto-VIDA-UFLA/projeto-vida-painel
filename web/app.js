@@ -279,7 +279,7 @@ let bagList = { bags: [] };
 async function loadBags() {
   bagList = await (await fetch("/api/bags")).json();
   const free = bagList.free_gb === null ? "" : `<div class="none">${num(bagList.free_gb, 1)} GB livres</div>`;
-  setHtml($("bags"), bagList.bags.map((b) => `<div class="rl" data-bag="${esc(b.name)}"><b>${esc(b.name)}</b><em>${b.seconds === null ? "?" : Math.floor(b.seconds / 60) + ":" + String(Math.round(b.seconds % 60)).padStart(2, "0")} · ${b.size_mb} MB</em><span class="act"><button class="ic pl" data-act="play" title="Reproduzir">▶</button><button class="ic" data-act="rename" title="Renomear">✎</button><button class="ic del" data-act="delete" title="Excluir">✕</button></span></div>`).join("") + free || '<div class="none">Nenhum bag salvo</div>');
+  setHtml($("bags"), bagList.bags.map((b) => `<div class="rl" data-bag="${esc(b.name)}"><b>${esc(b.name)}</b><em>${b.seconds === null ? "?" : Math.floor(b.seconds / 60) + ":" + String(Math.round(b.seconds % 60)).padStart(2, "0")}</em><span class="act"><button class="ic pl" data-act="play" title="Reproduzir">▶</button><button class="ic" data-act="rename" title="Renomear">✎</button><button class="ic del" data-act="delete" title="Excluir">✕</button></span></div>`).join("") + free || '<div class="none">Nenhum bag salvo</div>');
 }
 function setTab(name) {
   const bags = name === "bags";
