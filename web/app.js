@@ -171,9 +171,7 @@ function renderTiles(d) {
   if (!s.on) tile("tSafety", "old", "SEM DADOS", s.age === null ? "ESP32 sem resposta" : `há ${num(s.age)} s`);
   else if (s.permitted) tile("tSafety", "ok", "LIBERADO", "enable físico e lógico · 0 flags");
   else tile("tSafety", "bad", "BLOQUEADO", s.flags.map((f) => f.name).join(" · ") || "sem permissão");
-  if (t.esp.on && t.odroid.on) tile("tConn", "ok", "CONECTADOS", `dados há ${num(t.esp.age, 2)} s`);
-  else if (t.esp.on || t.odroid.on) tile("tConn", "warn", t.esp.on ? "SEM ODROID" : "SEM ESP32", t.esp.on ? "EKF e GPS sem dados" : "confira o agente micro-ROS");
-  else tile("tConn", "old", "SEM DADOS", "ligue o carro ou confira o cabo");
+  tile("tConn", t.link.cls, t.link.big, t.link.small);
   const r = t.rtk;
   if (!r.on) tile("tRtk", "old", "SEM DADOS", r.age === null ? "GPS sem resposta" : `há ${num(r.age)} s`);
   else tile("tRtk", r.status === "FIXED" ? "ok" : r.status === "FLOAT" ? "warn" : "bad", r.status, `${num((r.accuracy ?? 0) * 100, 1)} cm · ${r.satellites} satélites`);
@@ -299,8 +297,9 @@ function connect() {
     last = d;
     renderTiles(d); renderCards(d); drawMap();
     const ok = d.tiles.safety.on || d.tiles.rtk.on;
-    $("liveDot").className = "dot " + (ok ? "on" : "off");
-    $("liveText").textContent = ok ? "Ao vivo" : "Sem dados do carro";
+    $("liveDot").className = "dot " + (d.replay ? "replay" : ok ? "on" : "off");
+    $("liveText").textContent = d.replay ? "REPRODUZINDO BAG · dados não são do carro" : ok ? "Ao vivo" : "Sem dados do carro";
+    $("liveBox").classList.toggle("replaying", d.replay);
   };
   socket.onclose = () => {
     $("liveDot").className = "dot off";

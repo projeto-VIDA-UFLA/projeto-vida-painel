@@ -72,6 +72,29 @@ def mode_label(nav_mode, maneuver, bench, car_running):
     return "SEM COMANDO", "carro não iniciado", "old"
 
 
+def link_status(odroid_ping, ping_ms, esp_live, esp_fresh, odroid_live, odroid_fresh, replay, esp_age=None):
+    """Bloco ESP32 / Odroid: (cor, título, detalhe).
+
+    odroid_ping: o Odroid responde ao ping na rede ponto a ponto (None = ainda sem resposta).
+    esp_live / odroid_live: o publicador dos tópicos é o carro, não um rosbag.
+    esp_fresh / odroid_fresh: os dados desses publicadores estão chegando."""
+    ping_text = f"Odroid {_number(ping_ms, 1)} ms" if odroid_ping and ping_ms is not None else "Odroid responde"
+    esp_ok, odroid_ok = esp_live and esp_fresh, odroid_live and odroid_fresh
+    if odroid_ping is None:
+        return "old", "VERIFICANDO", "aguardando o ping do Odroid"
+    if not odroid_ping:
+        if replay:
+            return "bad", "SEM ODROID", "sem ping · dados vêm do bag"
+        return "bad", "SEM ODROID", "sem ping: confira o cabo e a energia"
+    if esp_ok and odroid_ok:
+        return "ok", "CONECTADOS", f"{ping_text} · ESP32 ok"
+    if esp_ok:
+        return "warn", "SEM NÓS DO ODROID", f"{ping_text} · EKF e GPS sem dados"
+    if odroid_ok:
+        return "bad", "SEM ESP32", f"{ping_text} · confira a serial e o agente"
+    return "warn", "ODROID SEM DADOS", f"{ping_text} · confira os containers"
+
+
 def in_automatic(nav_mode):
     return nav_mode in (NAV_PREPARING, NAV_CALIBRATING, NAV_MANEUVER, NAV_AUTOMATIC, NAV_STOPPING)
 

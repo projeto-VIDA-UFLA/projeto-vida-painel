@@ -7,7 +7,7 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .top{display:flex;align-items:center;gap:12px;background:#0b2a55;color:#fff;padding:6px 10px;border-radius:9px}
 .lgu{height:40px;display:block}.lgl{height:30px;display:block}.sp{flex:1}
 .m{color:#c3d0e2;font-size:12.5px;white-space:nowrap}.live{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:12.5px}
-.dot{width:8px;height:8px;background:#94a3b8;border-radius:50%}.dot.on{background:#34d399}.dot.off{background:#f87171}
+.dot{width:8px;height:8px;background:#94a3b8;border-radius:50%}.dot.on{background:#34d399}.dot.off{background:#f87171}.dot.replay{background:#3a2400}.live.replaying{background:#f59e0b;color:#3a2400;font-weight:800;padding:3px 10px;border-radius:6px}
 .st{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px}
 .t{border-radius:10px;padding:5px 10px;min-width:0;color:#fff;box-shadow:0 1px 3px #0003}
 .t label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;opacity:.95}

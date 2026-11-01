@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -21,6 +22,7 @@ STATE = os.path.join(DATA, "state.json")
 TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
 TILE_ZOOM = 18
 RATE_S = 0.1
+ODROID_IP = os.environ.get("VIDA_ODROID_IP", "192.168.10.1")
 
 
 def allowed_hosts(port=PORT):
@@ -83,6 +85,23 @@ class App:
             except OSError:
                 pass
             await asyncio.sleep(2.0)
+
+    async def poll_link(self):
+        """Ping real na rede ponto a ponto: bag nenhum faz o Odroid responder."""
+        while True:
+            ok, milliseconds = False, None
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    "ping", "-n", "-c", "1", "-W", "1", ODROID_IP,
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+                output, _ = await process.communicate()
+                ok = process.returncode == 0
+                match = re.search(rb"time=([\d.]+)", output)
+                milliseconds = float(match.group(1)) if match else None
+            except OSError:
+                pass
+            self.bridge.set_ping(ok, milliseconds)
+            await asyncio.sleep(1.0)
 
     def snapshot(self):
         data = self.bridge.snapshot(self.car_status)
@@ -274,6 +293,7 @@ def build_app(bridge, control):
 
     async def background(app):
         app["poll"] = asyncio.create_task(state.poll_car())
+        app["link"] = asyncio.create_task(state.poll_link())
         asyncio.get_running_loop().run_in_executor(None, state.prefetch_tiles)
 
     app.on_startup.append(background)

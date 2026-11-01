@@ -81,6 +81,19 @@ def test_mode_labels_and_block():
     assert logic.control_block(logic.NAV_MANUAL, False, 1.0)
 
 
+def test_link_status():
+    # ping, ms, esp_publica, esp_dados, odroid_publica, odroid_dados, replay
+    assert logic.link_status(None, None, False, False, False, False, False)[1] == "VERIFICANDO"
+    assert logic.link_status(True, 1.2, True, True, True, True, False)[:2] == ("ok", "CONECTADOS")
+    assert logic.link_status(True, 1.2, False, False, True, True, False)[:2] == ("bad", "SEM ESP32")
+    assert logic.link_status(True, 1.2, True, True, False, False, False)[1] == "SEM NÓS DO ODROID"
+    assert logic.link_status(True, 1.2, False, False, False, False, False)[1] == "ODROID SEM DADOS"
+    assert logic.link_status(False, None, False, False, False, False, False)[:2] == ("bad", "SEM ODROID")
+    # O bag entrega dados, mas o publicador não é o carro: não pode aparecer conectado.
+    assert logic.link_status(False, None, False, True, False, True, True)[1] == "SEM ODROID"
+    assert logic.link_status(True, 1.2, False, True, False, True, True)[1] == "ODROID SEM DADOS"
+
+
 def test_flags_decode_and_json():
     assert [f[0] for f in flags.decode(1 | 512)] == [1, 512]
     assert flags.decode(512)[0][3] is True

@@ -38,6 +38,7 @@ TRAIL_MAX = 6000
 LOG_MAX = 200
 LOG_WARN, LOG_ERROR = 30, 40   # níveis de rcl_interfaces/Log
 OWN_LOGGER = "vida_painel"
+BAG_NODE = "rosbag2_player"
 
 
 def load_limits(filename=CONFIG):
@@ -93,6 +94,13 @@ class Bridge(Node):
         self._esp_online = None
         self._odroid_online = None
         self._reason = ""
+        self.odroid_ping = None       # None até a primeira resposta do ping
+        self.ping_ms = None
+        self.esp_live = False
+        self.odroid_live = False
+        self.replay = False
+        self._ping_seen = None
+        self._replay_seen = False
         qos = qos_profile_sensor_data
         for topic, msg, key in (
                 ("/vida/safety/status", SafetyStatus, "safety"), ("/vida/safety/maneuver", Bool, "maneuver"),
@@ -116,6 +124,7 @@ class Bridge(Node):
         self.stanley_client = self.create_client(SetBool, "/stanley/enable")
         self.ekf_client = self.create_client(Trigger, "/robot_state_ekf_node/reset")
         self.create_timer(0.2, self.on_timer)
+        self.create_timer(1.0, self.check_publishers)
         self.event("Painel iniciado")
 
     def _storer(self, key):
@@ -153,6 +162,27 @@ class Bridge(Node):
             elif level >= LOG_ERROR and "gamepad" not in msg.name:
                 self.error(msg.name.split(".")[-1], msg.msg[:160], "", now)
 
+    def check_publishers(self):
+        """Quem publica mostra se o dado vem do carro: um bag chega como rosbag2_player."""
+        def names(topic):
+            return [info.node_name for info in self.get_publishers_info_by_topic(topic)]
+        esp, odroid = names("/vida/safety/status"), names("/robot_state/status")
+        navigation = names("/navigation/mode")
+        with self.lock:
+            self.esp_live = any(name != BAG_NODE for name in esp)
+            self.odroid_live = any(name != BAG_NODE for name in odroid)
+            self.replay = BAG_NODE in esp + odroid + navigation
+
+    def set_ping(self, ok, milliseconds):
+        with self.lock:
+            now = time.time()
+            if self._ping_seen is not None and ok != self._ping_seen:
+                self.event("Odroid voltou a responder ao ping" if ok else "Odroid parou de responder ao ping", now)
+                if not ok:
+                    self.error("Conexão", "Odroid parou de responder ao ping", "Confira o cabo de rede e a energia do Odroid.", now)
+            self._ping_seen = ok
+            self.odroid_ping, self.ping_ms = ok, milliseconds
+
     def on_timer(self):
         now = time.time()
         with self.lock:
@@ -160,16 +190,23 @@ class Bridge(Node):
 
     def track_changes(self, now):
         t = self.topics
-        esp = t["safety"].fresh(now, FRESH["safety"])
-        if esp != self._esp_online:
-            if self._esp_online is not None or esp:
-                self.event("ESP32 conectado" if esp else "ESP32 sem dados", now)
-            self._esp_online = esp
-        odroid = t["ekf"].fresh(now, FRESH["ekf"]) or t["gnss"].fresh(now, FRESH["gnss"])
+        if self.replay != self._replay_seen:
+            self.event("Reprodução de bag detectada: dados não vêm do carro" if self.replay else "Reprodução de bag encerrada", now)
+            self._replay_seen = self.replay
+        esp_fresh = t["safety"].fresh(now, FRESH["safety"])
+        esp_online = esp_fresh and self.esp_live
+        if esp_online != self._esp_online:
+            if self._esp_online is not None or esp_online:
+                self.event("ESP32 conectado" if esp_online else "ESP32 sem dados", now)
+                if not esp_online and self._esp_online:
+                    self.error("Conexão", "ESP32 parou de enviar dados", "Confira a serial e o agente micro-ROS no Odroid.", now)
+            self._esp_online = esp_online
+        odroid = (t["ekf"].fresh(now, FRESH["ekf"]) or t["gnss"].fresh(now, FRESH["gnss"])) and self.odroid_live
         if odroid != self._odroid_online:
             if self._odroid_online is not None or odroid:
-                self.event("Odroid conectado" if odroid else "Odroid sem dados", now)
+                self.event("Nós do Odroid com dados" if odroid else "Nós do Odroid sem dados", now)
             self._odroid_online = odroid
+        esp = esp_fresh
         if esp:
             mask = t["safety"].msg.inhibit_flags
             if mask != self._flags:
@@ -339,6 +376,7 @@ class Bridge(Node):
         trail_status = self.recorder.status(now)
         return {
             "now": now,
+            "replay": self.replay,
             "mode": {"label": mode, "detail": detail, "color": color, "automatic": automatic},
             "car": {"running": bool(running), **car_status},
             "tiles": {
@@ -347,8 +385,9 @@ class Bridge(Node):
                            "physical": bool(safety and safety.physical_enable), "logical": bool(safety and safety.logical_enable),
                            "refs": bool(safety and safety.drive_reference_fresh and safety.steering_reference_fresh),
                            "age": t["safety"].age(now)},
-                "esp": {"on": safety is not None, "age": t["safety"].age(now)},
-                "odroid": {"on": ekf is not None or gnss is not None},
+                "link": dict(zip(("cls", "big", "small"), logic.link_status(
+                    self.odroid_ping, self.ping_ms, self.esp_live, safety is not None,
+                    self.odroid_live, ekf is not None or gnss is not None, self.replay))),
                 "rtk": {"on": gnss is not None, "status": rtk, "accuracy": float(gnss.horizontal_accuracy_m) if gnss else None,
                         "satellites": int(gnss.satellites) if gnss else None, "age": t["gnss"].age(now)},
                 "corrections": {"on": gnss is not None, "age": age, "limit": self.limits["max_correction_age_s"], "ntrip": ntrip},
