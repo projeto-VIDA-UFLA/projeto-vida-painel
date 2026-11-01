@@ -387,7 +387,7 @@ class Bridge(Node):
     def trail_since(self, generation, index):
         with self.lock:
             if generation != self.trail_generation:
-                return self.trail_generation, 0, list(self.trail), True
+                return self.trail_generation, len(self.trail), list(self.trail), True
             return generation, len(self.trail), self.trail[index:], False
 
 

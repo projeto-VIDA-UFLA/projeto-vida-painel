@@ -151,6 +151,20 @@ def test_resolve_only_listed(tmp_path):
         routes.resolve("../../etc/passwd", str(tmp_path))
 
 
+def test_trail_is_sent_only_once():
+    """Ao abrir a página, o rastro duplicado criava uma reta do fim até o começo."""
+    import threading
+    from types import SimpleNamespace
+    from painel.bridge import Bridge
+    bridge = SimpleNamespace(lock=threading.RLock(), trail=[(1, 1), (2, 2)], trail_generation=3)
+    generation, index, points, reset = Bridge.trail_since(bridge, -1, 0)
+    assert (generation, index, points, reset) == (3, 2, [(1, 1), (2, 2)], True)
+    assert Bridge.trail_since(bridge, generation, index)[2] == []
+    bridge.trail.append((3, 3))
+    generation, index, points, reset = Bridge.trail_since(bridge, generation, index)
+    assert (index, points, reset) == (3, [(3, 3)], False)
+
+
 def test_compose_commands_are_fixed():
     control = DockerControl("/projeto", dry_run=True)
     import asyncio
