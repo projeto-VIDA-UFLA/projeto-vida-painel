@@ -35,6 +35,10 @@
       <div class="mapwrap" id="mapWrap">
         <svg id="map" xmlns="http://www.w3.org/2000/svg"><g id="tiles"></g><polyline id="rt" class="rt"/><polyline id="tr" class="ex"/><circle id="zone" class="zone"/><circle id="start" class="start"/><text id="startLabel" class="ml">início da rota</text><line id="toStart" class="to"/><text id="toLabel" class="mb"></text><polygon id="car" class="car"/><g id="scale"><line class="sb"/><text class="ml" text-anchor="middle">10 m</text></g></svg>
         <div class="mapmsg" id="mapMsg"></div>
+        <div class="zm" id="zoomBar">
+          <div class="zg"><button id="camRoute" title="Enquadrar a rota">Rota</button><button id="camCar" title="Seguir o veículo">Veículo</button><button id="camAll" title="Rota, veículo e rastro juntos">Tudo</button></div>
+          <div class="zg"><button id="zoomOut" title="Afastar" aria-label="Afastar">−</button><button id="zoomIn" title="Aproximar" aria-label="Aproximar">+</button></div>
+        </div>
       </div>
       <div class="kp">
         <div class="k"><label id="k1l">Até o início da rota</label><b id="k1">—</b></div>

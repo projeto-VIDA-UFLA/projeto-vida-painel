@@ -21,26 +21,61 @@ function project(lat, lon) {
 }
 const metersPerPx = (lat) => 156543.03392 * Math.cos(lat * Math.PI / 180) / 2 ** TILE_ZOOM;
 
-function fitView() {
-  const pts = [], rp = routeData?.points || [], car = last?.position?.car;
-  rp.forEach((p) => pts.push(project(p[0], p[1])));
-  if (car) {
-    const c = project(car.lat, car.lon);
-    if (!pts.length) { pts.push([c[0] - 45, c[1] - 30], [c[0] + 45, c[1] + 30]); }
-    else {
-      const d = Math.hypot(c[0] - pts[0][0], c[1] - pts[0][1]);
-      if (d < 400) pts.push(c);   // veículo longe (ex.: laboratório) não encolhe a pista
-    }
-  }
-  if (!pts.length) return null;
-  let x0 = Math.min(...pts.map((p) => p[0])), x1 = Math.max(...pts.map((p) => p[0]));
-  let y0 = Math.min(...pts.map((p) => p[1])), y1 = Math.max(...pts.map((p) => p[1]));
-  const pad = Math.max(x1 - x0, y1 - y0) * 0.06 + 4;
-  const wrap = $("mapWrap").getBoundingClientRect(), ratio = wrap.width / Math.max(wrap.height, 1);
-  let w = x1 - x0 + 2 * pad, h = y1 - y0 + 2 * pad;
-  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+// Enquadramento: "route" (rota, e o veículo se estiver perto), "all" (rota, veículo e
+// rastro), "car" (segue o veículo) ou "free" (depois de arrastar ou dar zoom).
+const MIN_W = 25, MAX_W = 6000, MAX_TILES = 120;
+let cam = { mode: "route", cx: 0, cy: 0, w: 120 };
+
+function bounds(points) {
+  return { x0: Math.min(...points.map((p) => p[0])), x1: Math.max(...points.map((p) => p[0])),
+           y0: Math.min(...points.map((p) => p[1])), y1: Math.max(...points.map((p) => p[1])) };
+}
+function fitPoints(points, ratio) {
+  const b = bounds(points);
+  const pad = Math.max(b.x1 - b.x0, b.y1 - b.y0) * 0.06 + 4;
+  let w = b.x1 - b.x0 + 2 * pad, h = b.y1 - b.y0 + 2 * pad;
+  const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
   if (w / h < ratio) w = h * ratio; else h = w / ratio;
   return { x: cx - w / 2, y: cy - h / 2, w, h };
+}
+function fitView() {
+  const wrap = $("mapWrap").getBoundingClientRect(), ratio = wrap.width / Math.max(wrap.height, 1);
+  const carPos = last?.position?.car, car = carPos ? project(carPos.lat, carPos.lon) : null;
+  const around = (cx, cy, w) => { const width = Math.min(MAX_W, Math.max(MIN_W, w)), h = width / ratio; return { x: cx - width / 2, y: cy - h / 2, w: width, h }; };
+  if (cam.mode === "free") return around(cam.cx, cam.cy, cam.w);
+  if (cam.mode === "car" && car) return around(car[0], car[1], cam.w);
+  const pts = (routeData?.points || []).map((p) => project(p[0], p[1]));
+  if (cam.mode === "all") {
+    if (car) pts.push(car);
+    trail.forEach((p) => pts.push(project(p[0], p[1])));
+  } else if (car) {
+    if (!pts.length) return around(car[0], car[1], 120);
+    if (Math.hypot(car[0] - pts[0][0], car[1] - pts[0][1]) < 400) pts.push(car);   // longe, não encolhe a pista
+  }
+  if (!pts.length) return car ? around(car[0], car[1], 120) : null;
+  const fit = fitPoints(pts, ratio);
+  if (fit.w > MAX_W) return around(fit.x + fit.w / 2, fit.y + fit.h / 2, MAX_W);
+  return fit;
+}
+function setCam(mode) {
+  if (vb && mode === "car" && cam.mode !== "car") cam.w = Math.min(vb.w, 160);
+  cam.mode = mode;
+  [["camRoute", "route"], ["camCar", "car"], ["camAll", "all"]].forEach(([id, m]) => $(id).classList.toggle("on", m === mode));
+  if (last || routeData) drawMap();
+}
+// Zoom mantendo fixo o ponto sob o cursor; seguindo o veículo, só muda a distância.
+function zoomBy(factor, clientX, clientY) {
+  if (!vb) return;
+  const box = $("mapWrap").getBoundingClientRect();
+  const width = Math.min(MAX_W, Math.max(MIN_W, vb.w * factor)), scale = width / vb.w;
+  if (cam.mode === "car") { cam.w = width; drawMap(); return; }
+  const fx = clientX === undefined ? 0.5 : (clientX - box.left) / box.width;
+  const fy = clientY === undefined ? 0.5 : (clientY - box.top) / box.height;
+  const px = vb.x + fx * vb.w, py = vb.y + fy * vb.h;
+  cam.cx = px + (0.5 - fx) * vb.w * scale;
+  cam.cy = py + (0.5 - fy) * vb.h * scale;
+  cam.w = width;
+  setCam("free");
 }
 
 function drawTiles() {
@@ -51,7 +86,9 @@ function drawTiles() {
   const j0 = Math.floor(Y / TILE_SIZE), j1 = Math.floor((Y + vb.h) / TILE_SIZE);
   const key = [i0, i1, j0, j1].join();
   if (key === tilesKey) return;
-  tilesKey = key; g.innerHTML = ""; $("mapWrap")._missing = 0;
+  tilesKey = key; g.innerHTML = ""; $("mapWrap")._missing = 0; $("mapWrap")._tooFar = 0;
+  // Muito afastado seriam imagens demais: fica só o traçado até aproximar.
+  if ((i1 - i0 + 1) * (j1 - j0 + 1) > MAX_TILES) { $("mapWrap")._tooFar = 1; return; }
   for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
     const im = document.createElementNS("http://www.w3.org/2000/svg", "image");
     im.setAttribute("href", `/tiles/${TILE_ZOOM}/${j}/${i}`);
@@ -77,9 +114,7 @@ function drawMap() {
   $("mapCard").classList.toggle("gps", view === "gps");
   if (!next) { vb = null; $("mapMsg").textContent = "Aguardando rota ou posição do GPS"; map.style.visibility = "hidden"; return; }
   map.style.visibility = "visible";
-  if (!vb || Math.abs(vb.x - next.x) + Math.abs(vb.y - next.y) + Math.abs(vb.w - next.w) > 3) {
-    vb = next; map.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
-  }
+  vb = next; map.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
   drawTiles();
   const k = vb.w / box.width, font = 13 * k, pos = last?.position || {}, rp = routeData?.points;
   const refLat = rp?.[0]?.[0] ?? pos.car?.lat ?? 0, mpp = metersPerPx(refLat);
@@ -108,15 +143,18 @@ function drawMap() {
       label.setAttribute("x", c[0] + 14 * k); label.setAttribute("y", c[1] + 5 * k); label.setAttribute("font-size", 14 * k);
     }
   } else { carEl.style.display = line.style.display = label.style.display = "none"; }
-  const sc = $("scale"), sl = sc.querySelector("line"), st = sc.querySelector("text"), len = 10 / mpp;
+  const sc = $("scale"), sl = sc.querySelector("line"), st = sc.querySelector("text");
+  const meters = [5, 10, 20, 50, 100, 200, 500, 1000, 2000].find((m) => m / mpp / k >= 55) ?? 5000, len = meters / mpp;
+  st.textContent = meters >= 1000 ? `${meters / 1000} km` : `${meters} m`;
   const sx = vb.x + 14 * k, sy = vb.y + vb.h - 12 * k;
   sl.setAttribute("x1", sx); sl.setAttribute("x2", sx + len); sl.setAttribute("y1", sy); sl.setAttribute("y2", sy);
   st.setAttribute("x", sx + len / 2); st.setAttribute("y", sy - 5 * k); st.setAttribute("font-size", font);
   let msg = "";
   if (!rp) msg = "Selecione uma rota na lista";
   else if (!car) msg = "Sem posição do GPS";
-  else if (pos.distance !== null && pos.distance > 200) msg = `Veículo a ${num(pos.distance)} m do início da rota, fora desta vista`;
-  if (view === "gps" && $("mapWrap")._missing) msg = (msg ? msg + ". " : "") + "Sem imagem salva desta área";
+  else if (cam.mode === "route" && pos.distance !== null && pos.distance > 200) msg = `Veículo a ${num(pos.distance)} m do início, fora desta vista: use Tudo ou Veículo`;
+  if (view === "gps" && $("mapWrap")._tooFar) msg = (msg ? msg + ". " : "") + "Aproxime para ver a imagem";
+  else if (view === "gps" && $("mapWrap")._missing) msg = (msg ? msg + ". " : "") + "Sem imagem salva desta área";
   $("mapMsg").textContent = msg;
   $("foot").textContent = view === "gps" ? "Imagem do mapa: Esri World Imagery (pode estar deslocada de 1 a 3 m)" : "Painel do VIDA · LMT/UFLA";
 }
@@ -244,7 +282,7 @@ async function loadRoutes() {
   renderRoutes(data.selected);
   if (data.selected && routeData?.id !== data.selected) {
     routeData = await (await fetch(`/api/route?id=${encodeURIComponent(data.selected)}`)).json();
-    vb = null; tilesKey = ""; drawRoute();
+    vb = null; tilesKey = ""; drawRoute(); if (cam.mode !== "route") setCam("route");
   } else if (!data.selected) { routeData = null; drawRoute(); }
   return data;
 }
@@ -339,8 +377,38 @@ function setView(name) {
 }
 $("vGraph").onclick = () => setView("graph");
 $("vGps").onclick = () => setView("gps");
+$("camRoute").onclick = () => setCam("route");
+$("camCar").onclick = () => setCam("car");
+$("camAll").onclick = () => setCam("all");
+$("zoomIn").onclick = () => zoomBy(1 / 1.5);
+$("zoomOut").onclick = () => zoomBy(1.5);
+const mapEl = $("map");
+mapEl.addEventListener("wheel", (event) => {
+  event.preventDefault();
+  zoomBy(event.deltaY > 0 ? 1.2 : 1 / 1.2, event.clientX, event.clientY);
+}, { passive: false });
+let dragging = null;
+mapEl.addEventListener("pointerdown", (event) => {
+  if (!vb) return;
+  dragging = { x: event.clientX, y: event.clientY, cx: vb.x + vb.w / 2, cy: vb.y + vb.h / 2, w: vb.w };
+  mapEl.setPointerCapture(event.pointerId);
+  mapEl.classList.add("drag");
+});
+mapEl.addEventListener("pointermove", (event) => {
+  if (!dragging) return;
+  const k = dragging.w / $("mapWrap").getBoundingClientRect().width;
+  cam.cx = dragging.cx - (event.clientX - dragging.x) * k;
+  cam.cy = dragging.cy - (event.clientY - dragging.y) * k;
+  cam.w = dragging.w;
+  if (cam.mode !== "free") { cam.mode = "free"; ["camRoute", "camCar", "camAll"].forEach((id) => $(id).classList.remove("on")); }
+  drawMap();
+});
+const endDrag = () => { dragging = null; mapEl.classList.remove("drag"); };
+mapEl.addEventListener("pointerup", endDrag);
+mapEl.addEventListener("pointercancel", endDrag);
 window.addEventListener("resize", () => { vb = null; tilesKey = ""; if (last) drawMap(); });
 setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString("pt-BR"); }, 500);
 const asked = new URLSearchParams(location.search).get("view");
 setView(asked === "gps" || asked === "graph" ? asked : view);
+setCam(cam.mode);
 loadRoutes().then(connect);

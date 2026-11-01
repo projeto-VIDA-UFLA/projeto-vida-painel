@@ -32,7 +32,9 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .tg{display:flex;background:#e8ebf0;border-radius:6px;padding:2px}.tg button{padding:2px 12px;border-radius:4px;font-size:12px;font-weight:700;color:#5d6877;background:none}.tg .on{background:#fff;color:var(--blue);box-shadow:0 1px 2px #0002}
 .mapwrap{position:relative;min-height:0;background:#f7f8fa;border-radius:7px;overflow:hidden}
 #map{position:absolute;inset:0;width:100%;height:100%;display:block}
-.mapmsg{position:absolute;left:8px;top:8px;right:8px;font-size:12.5px;color:#5d6877;pointer-events:none}
+#map{cursor:grab;touch-action:none}#map.drag{cursor:grabbing}
+.zm{position:absolute;right:8px;top:8px;display:flex;gap:6px}.zg{display:flex;background:#fffffff0;border-radius:6px;box-shadow:0 1px 3px #0004;overflow:hidden}.zg button{background:none;color:#39475a;font-size:12px;font-weight:700;padding:3px 9px;min-width:28px}.zg button:hover{background:#e8ebf0}.zg button.on{background:var(--blue);color:#fff}
+.mapmsg{position:absolute;left:8px;top:8px;right:190px;font-size:12.5px;color:#5d6877;pointer-events:none}
 .rt{fill:none;stroke:#aeb5bf;stroke-linejoin:round;vector-effect:non-scaling-stroke;stroke-width:6}
 .ex{fill:none;stroke:#1d4ed8;stroke-linejoin:round;vector-effect:non-scaling-stroke;stroke-width:2.4}
 .car{fill:#dc2626;stroke:#fff;vector-effect:non-scaling-stroke;stroke-width:1.5}.car.stale{fill:#6b7280}
