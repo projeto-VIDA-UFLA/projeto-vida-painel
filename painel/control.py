@@ -5,6 +5,7 @@ Só estas ações existem, com a rota vinda da lista: nada do navegador vira com
 import asyncio
 import json
 import os
+import re
 
 MANUAL = "ros_ws"
 NAVIGATION = "navegacao"
@@ -67,7 +68,7 @@ class DockerControl:
             elif name == NAVIGATION_CONTAINER:
                 result["navigation"] = running
                 if running:
-                    result["route"] = route_from_env(item.get("Config", {}).get("Env", []))
+                    result["route"] = route_from_command(item.get("Config", {}).get("Cmd") or [])
         return result
 
     async def start_manual(self):
@@ -90,9 +91,7 @@ class DockerControl:
             self.fake.update({MANUAL: False, NAVIGATION: False, "route": None})
 
 
-def route_from_env(env):
-    prefix = f"VIDA_PATH_FILE={CONTAINER_ROOT}/"
-    for item in env:
-        if item.startswith(prefix):
-            return item[len(prefix):]
-    return None
+def route_from_command(command):
+    """O compose coloca a rota no comando do container (path_file:=...), não no ambiente."""
+    match = re.search(rf"path_file:={CONTAINER_ROOT}/(\S+)", " ".join(command))
+    return match.group(1) if match else None

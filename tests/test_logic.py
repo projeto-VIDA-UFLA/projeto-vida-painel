@@ -7,7 +7,7 @@ from vida_navigation.geo import Origin, to_geodetic
 from vida_navigation.path import PathFile
 
 from painel import flags, logic, routes
-from painel.control import DockerControl, route_from_env
+from painel.control import DockerControl, route_from_command
 
 
 def base():
@@ -152,4 +152,5 @@ def test_compose_commands_are_fixed():
     assert asyncio.run(control.status())["route"] == "2026-11-01/rota_6.csv"
     asyncio.run(control.stop())
     assert asyncio.run(control.status())["navigation"] is False
-    assert route_from_env(["A=1", "VIDA_PATH_FILE=/caminhos/x/y.csv"]) == "x/y.csv"
+    assert route_from_command(["bash", "-lc", "exec ros2 launch vida_navigation navigation.launch.py path_file:=/caminhos/x/y.csv"]) == "x/y.csv"
+    assert route_from_command(["bash"]) is None
