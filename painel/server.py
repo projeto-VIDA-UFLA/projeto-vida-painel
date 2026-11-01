@@ -313,6 +313,10 @@ class App:
             self.bridge.event(f"Rota {summary['name']} salva: {summary['length_m']} m")
         return web.json_response({"ok": True, "saved": True, "summary": summary})
 
+    async def clear_trail(self, request):
+        self.bridge.clear_trail()
+        return web.json_response({"ok": True})
+
     async def clear_errors(self, request):
         with self.bridge.lock:
             self.bridge.errors.clear()
@@ -378,6 +382,7 @@ def build_app(bridge, control):
     app.router.add_post("/api/stop", state.stop)
     app.router.add_post("/api/select", state.select)
     app.router.add_post("/api/errors/clear", state.clear_errors)
+    app.router.add_post("/api/trail/clear", state.clear_trail)
     app.router.add_post("/api/route/rename", state.route_rename)
     app.router.add_post("/api/route/delete", state.route_delete)
     app.router.add_get("/api/bags", state.api_bags)

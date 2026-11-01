@@ -428,6 +428,10 @@ class Bridge(Node):
             "blocked": logic.control_block(nav_mode, maneuver, speed),
         }
 
+    def clear_trail(self):
+        with self.lock:
+            self.trail, self.trail_generation = [], self.trail_generation + 1
+
     def trail_since(self, generation, index):
         with self.lock:
             if generation != self.trail_generation:

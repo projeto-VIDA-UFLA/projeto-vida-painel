@@ -220,6 +220,19 @@ def test_trail_is_sent_only_once():
     assert (index, points, reset) == (3, [(3, 3)], False)
 
 
+def test_clear_trail_reaches_open_pages():
+    import threading
+    from types import SimpleNamespace
+    from painel.bridge import Bridge
+    bridge = SimpleNamespace(lock=threading.RLock(), trail=[(1, 1), (2, 2)], trail_generation=0)
+    generation, index, _, _ = Bridge.trail_since(bridge, -1, 0)
+    Bridge.clear_trail(bridge)
+    assert bridge.trail == []
+    assert Bridge.trail_since(bridge, generation, index) == (1, 0, [], True)
+    bridge.trail.append((3, 3))
+    assert Bridge.trail_since(bridge, 1, 0)[2] == [(3, 3)]
+
+
 def test_compose_commands_are_fixed():
     control = DockerControl("/projeto", dry_run=True)
     import asyncio

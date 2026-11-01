@@ -321,7 +321,8 @@ function connect() {
     const d = JSON.parse(event.data);
     d.limits = { max_distance: parseFloat((d.checks.items.find((c) => c.label.startsWith("Veículo até"))?.label.match(/\d+/) || [3])[0]) };
     if (d.trail.reset) trail = [];
-    if (d.trail.points.length) { trail = trail.concat(d.trail.points); drawTrail(); }
+    if (d.trail.points.length) trail = trail.concat(d.trail.points);
+    if (d.trail.reset || d.trail.points.length) drawTrail();
     d.selected_seen = last?.selected_seen;
     last = d;
     renderTiles(d); renderCards(d); drawMap();
@@ -440,6 +441,7 @@ function setView(name) {
 }
 $("vGraph").onclick = () => setView("graph");
 $("vGps").onclick = () => setView("gps");
+$("trailClear").onclick = () => post("/api/trail/clear");
 $("camRoute").onclick = () => setCam("route");
 $("camCar").onclick = () => setCam("car");
 $("camAll").onclick = () => setCam("all");
