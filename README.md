@@ -40,7 +40,7 @@ O acesso ao Docker do notebook equivale a root. Por isso, o servidor escuta só 
 
 ## Bags
 
-Ficam em `VIDA_BAGS_DIR` (padrão `~/rosbag`). Renomear troca só o nome da pasta. Excluir move para `.lixeira` dentro dessa pasta, então o espaço só é liberado ao apagar a lixeira. Um bag em gravação ou reprodução não pode ser renomeado nem excluído.
+Ficam em `VIDA_BAGS_DIR` (padrão `~/projeto-vida/rosbag`). Renomear troca só o nome da pasta. Excluir move para `.lixeira` dentro dessa pasta, então o espaço só é liberado ao apagar a lixeira. Um bag em gravação ou reprodução não pode ser renomeado nem excluído.
 
 ## Regras de exibição
 
