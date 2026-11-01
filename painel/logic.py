@@ -126,7 +126,8 @@ def entry_checks(c):
         items.append(check("RTK com solução", "sem GPS", False))
     items.append(check("EKF rodando", c["phase_text"] if c["ekf_fresh"] else "sem dados", c["ekf_fresh"]))
     items.append(check("Gamepad conectado", "ok" if c["gamepad_fresh"] else "sem dados", c["gamepad_fresh"]))
-    items.append(check("Navegação no ar", "ok" if c["nav_ready"] else "inicie o carro", c["nav_ready"]))
+    waiting = "aguardando Stanley e EKF" if c.get("car_running") else "inicie o carro"
+    items.append(check("Navegação no ar", "ok" if c["nav_ready"] else waiting, c["nav_ready"]))
     return items
 
 
@@ -143,14 +144,16 @@ HINTS = (
 )
 
 
-def next_step(items):
+def next_step(items, car_running=False):
     missing = [item["label"] for item in items if not item["ok"]]
     if not missing:
         return "segure o △ no controle por 5 s para o Stanley começar."
     for prefix, hint in HINTS:
+        if prefix == "Navegação" and car_running:
+            continue
         if any(label.startswith(prefix) for label in missing):
             return hint
-    return "confira os itens em vermelho."
+    return "aguarde: a navegação ainda está subindo." if car_running else "confira os itens em vermelho."
 
 
 def rate_meter(stamps, now, window=2.0):

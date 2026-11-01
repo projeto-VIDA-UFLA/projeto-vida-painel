@@ -325,7 +325,7 @@ class Bridge(Node):
             "fix_ok": bool(gnss and gnss.gnss_fix_ok), "corrections": bool(gnss and gnss.corrections_received),
             "rtk": rtk, "gamepad_fresh": gamepad_fresh,
             "nav_ready": self.stanley_client.service_is_ready() and self.ekf_client.service_is_ready() and nav is not None,
-            "phase_text": PHASES.get(ekf.phase, "") if ekf else "",
+            "phase_text": PHASES.get(ekf.phase, "") if ekf else "", "car_running": bool(running),
         }
         checks = logic.entry_checks(values)
         if automatic and stanley is not None:
@@ -375,7 +375,7 @@ class Bridge(Node):
                          "saturated": bool(stanley.steering_saturated) if stanley and automatic else False},
             "checks": {"title": "Condições do automático" if automatic else "Para executar a rota",
                        "items": checks, "ready": all(c["ok"] for c in checks),
-                       "next": "" if automatic else logic.next_step(checks), "automatic": automatic},
+                       "next": "" if automatic else logic.next_step(checks, bool(running)), "automatic": automatic},
             "errors": list(self.errors)[:60],
             "events": list(self.events)[:60],
             "health": [{"name": n, "hz": round(logic.rate_meter(t[k].stamps, now), 1 if k in ("fix", "rtcm") else 0),

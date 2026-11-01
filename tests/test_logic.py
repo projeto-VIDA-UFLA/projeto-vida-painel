@@ -33,6 +33,13 @@ def test_each_condition_blocks(key, value, label):
     assert len(failed) == 1 and failed[0].startswith(label)
 
 
+def test_no_start_hint_when_car_is_running():
+    c = base()
+    c.update(nav_ready=False, car_running=True)
+    items = logic.entry_checks(c)
+    assert "Iniciar" not in logic.next_step(items, True) and "Iniciar" in logic.next_step(items, False)
+
+
 def test_float_is_accepted_like_mode_manager():
     c = base()
     c["rtk"] = "FLOAT"
