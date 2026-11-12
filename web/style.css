@@ -64,6 +64,7 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .md{background:var(--blue);color:#fff;border-radius:10px;display:flex;flex-direction:column;justify-content:center;padding:3px 14px;min-width:0}.md small{font-size:11px;opacity:.95;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.md b{font-size:21px;line-height:1.1;font-weight:800;white-space:nowrap}.md.ok{background:#15803d}.md.warn{background:#d97706}.md.old{background:#7a8492}
 .stop{color:#fff;font-size:16px;font-weight:800;border-radius:10px;background:#c81e1e}.stop.go{background:#15803d}.ops{margin-top:3px;line-height:1.1;color:var(--mut);font-size:12.5px;text-align:center}
 .fixb{height:120px}
+.netb{background:#fff;color:#0b2a55;font-weight:800;font-size:12px;padding:4px 12px;border-radius:6px;white-space:nowrap}.netb.on{background:#c81e1e;color:#fff}.netb[hidden]{display:none}
 .robadge{background:#c6d6fb;color:#0b2a55;font-weight:800;font-size:12px;padding:3px 10px;border-radius:6px;white-space:nowrap}.robadge[hidden]{display:none}
 .ro .add,.ro .clr,.ro .ic,.ro #trailClear,.ro .rec button,.ro .rec .bb,.ro #btnCar{display:none!important}.ro .rlp{cursor:default}.ro .rl:hover{background:none}.ro .rl.cur:hover{background:var(--blueb)}.ro .opr{grid-template-columns:1fr}
 .foot{font-size:11px;color:#5d6877;text-align:center}

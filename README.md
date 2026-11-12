@@ -72,3 +72,7 @@ docker run -d --rm --name vida_painel_teste --network host -e ROS_DOMAIN_ID=77 -
   -e VIDA_PAINEL_PORT=18080 -e VIDA_PAINEL_DRY_RUN=1 -e VIDA_PAINEL_DATA=/tmp/d \
   -v ~/projeto-vida/analises:/caminhos:ro vida-painel:humble
 ```
+
+## Botão Conectar à Odroid
+
+Em computadores preparados com `scripts/rede/preparar_computador.sh` (repositório do alto-nível), o topo do painel mostra **Conectar à Odroid** / **Desconectar da Odroid**. O painel não mexe na rede: ele troca arquivos em `/run/vida-rede` com o serviço `vida-rede` do Ubuntu, que ativa o perfil "VIDA Odroid" (192.168.10.2 + NAT) e confere a Odroid com ping. Sem o serviço (como no notebook principal, que tem configuração própria) o botão não aparece. Roteiro completo em `docs/novo_computador.md` do alto-nível.

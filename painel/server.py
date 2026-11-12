@@ -14,6 +14,7 @@ from painel import routes as routelib
 from painel.bags import BagManager
 from painel.bridge import start_ros
 from painel.control import DockerControl
+from painel.network import Network
 
 PORT = int(os.environ.get("VIDA_PAINEL_PORT", "8080"))
 HOST = "127.0.0.1"
@@ -74,6 +75,7 @@ class App:
         self.busy = False
         self.failed_tiles = {}
         self.bags = BagManager()
+        self.network = Network()
         if self.selected:
             self._apply_route(self.selected)
 
@@ -114,21 +116,30 @@ class App:
                 pass
             await asyncio.sleep(2.0)
 
+    @staticmethod
+    async def ping_odroid():
+        """(responde, ms): um ping real na rede ponto a ponto."""
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "ping", "-n", "-c", "1", "-W", "1", ODROID_IP,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            output, _ = await process.communicate()
+        except OSError:
+            return False, None
+        match = re.search(rb"time=([\d.]+)", output)
+        return process.returncode == 0, float(match.group(1)) if match else None
+
     async def poll_link(self):
         """Ping real na rede ponto a ponto: bag nenhum faz o Odroid responder."""
         while True:
-            ok, milliseconds = False, None
-            try:
-                process = await asyncio.create_subprocess_exec(
-                    "ping", "-n", "-c", "1", "-W", "1", ODROID_IP,
-                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-                output, _ = await process.communicate()
-                ok = process.returncode == 0
-                match = re.search(rb"time=([\d.]+)", output)
-                milliseconds = float(match.group(1)) if match else None
-            except OSError:
-                pass
-            self.bridge.set_ping(ok, milliseconds)
+            self.bridge.set_ping(*await self.ping_odroid())
+            await asyncio.sleep(1.0)
+
+    async def poll_network(self):
+        """Estado do perfil "VIDA Odroid" (botão Conectar / Desconectar)."""
+        while True:
+            if not self.network.pending:
+                self.network.refresh()
             await asyncio.sleep(1.0)
 
     def snapshot(self):
@@ -136,6 +147,7 @@ class App:
         data["selected"] = self.selected
         data["busy"] = self.busy
         data["bags"] = self.bags.status()
+        data["net"] = self.network.status()
         return data
 
     # -------------------------------------------------------- páginas
@@ -359,6 +371,32 @@ class App:
         self.bridge.clear_trail()
         return web.json_response({"ok": True})
 
+    async def net_connect(self, request):
+        """Pede ao serviço vida-rede o perfil no cabo; ele confere a Odroid com ping (até 10 s)."""
+        if self.network.busy:
+            raise web.HTTPConflict(text="Aguarde a operação de rede anterior terminar.")
+        try:
+            device, ping = await self.network.connect()
+        except RuntimeError as error:
+            raise web.HTTPConflict(text=str(error))
+        if ping:
+            self.bridge.event(f"Conectado à Odroid pelo cabo ({device})")
+        else:
+            self.bridge.event(f"Perfil da Odroid ativo em {device}, mas a Odroid não responde ao ping")
+        return web.json_response({"ok": True, "ping": ping, "device": device})
+
+    async def net_disconnect(self, request):
+        if self.network.busy:
+            raise web.HTTPConflict(text="Aguarde a operação de rede anterior terminar.")
+        if self.car_status.get("manual") or self.car_status.get("navigation"):
+            raise web.HTTPConflict(text="Pare o carro antes de desconectar da Odroid.")
+        try:
+            await self.network.disconnect()
+        except RuntimeError as error:
+            raise web.HTTPConflict(text=str(error))
+        self.bridge.event("Desconectado da Odroid: porta de rede de volta ao modo automático")
+        return web.json_response({"ok": True})
+
     async def clear_errors(self, request):
         with self.bridge.lock:
             self.bridge.errors.clear()
@@ -424,6 +462,8 @@ def build_app(bridge, control):
     app.router.add_post("/api/stop", state.stop)
     app.router.add_post("/api/select", state.select)
     app.router.add_post("/api/errors/clear", state.clear_errors)
+    app.router.add_post("/api/net/connect", state.net_connect)
+    app.router.add_post("/api/net/disconnect", state.net_disconnect)
     app.router.add_post("/api/trail/clear", state.clear_trail)
     app.router.add_post("/api/route/rename", state.route_rename)
     app.router.add_post("/api/route/delete", state.route_delete)
@@ -443,6 +483,7 @@ def build_app(bridge, control):
     async def background(app):
         app["poll"] = asyncio.create_task(state.poll_car())
         app["link"] = asyncio.create_task(state.poll_link())
+        app["net"] = asyncio.create_task(state.poll_network())
         asyncio.get_running_loop().run_in_executor(None, state.prefetch_tiles)
 
     async def close_bags(app):

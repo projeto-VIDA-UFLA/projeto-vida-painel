@@ -166,6 +166,28 @@ function tile(id, cls, big, small) {
   el.querySelector("b").textContent = big;
   el.querySelector("small").textContent = small;
 }
+// Botão Conectar / Desconectar da Odroid: só com o perfil "VIDA Odroid" instalado
+// (scripts/rede/preparar_computador.sh do alto-nível) e só no notebook.
+function renderNet(d) {
+  const n = d.net, btn = $("btnNet");
+  btn.hidden = !n || !n.installed || d.readonly;
+  if (btn.hidden) return;
+  btn.classList.toggle("on", n.active && !n.busy);
+  if (n.busy) {
+    btn.textContent = n.busy === "connect" ? "Conectando…" : "Desconectando…";
+    btn.disabled = true; btn.title = "";
+  } else if (n.active) {
+    btn.textContent = "Desconectar da Odroid";
+    btn.disabled = false; btn.title = `Cabo em ${n.device}. Ao desconectar, a porta volta ao modo automático (DHCP).`;
+  } else {
+    btn.textContent = "Conectar à Odroid";
+    btn.disabled = !n.cable; btn.title = n.cable ? "Configura a porta de rede para a Odroid e compartilha a internet" : "Ligue o cabo de rede até a Odroid";
+  }
+  if (!n.active && !d.tiles.link.cls.startsWith("ok") && !n.busy) {
+    $("tConn").querySelector("small").textContent = n.cable ? "clique em Conectar à Odroid" : "ligue o cabo até a Odroid";
+  }
+}
+
 function renderTiles(d) {
   const t = d.tiles, s = t.safety;
   if (!s.on) tile("tSafety", "old", "SEM DADOS", s.age === null ? "ESP32 sem resposta" : `há ${num(s.age)} s`);
@@ -331,7 +353,7 @@ function connect() {
     last = d;
     document.body.classList.toggle("ro", !!d.readonly);
     $("roBadge").hidden = !d.readonly;
-    renderTiles(d); renderCards(d); drawMap();
+    renderTiles(d); renderCards(d); renderNet(d); drawMap();
     const ok = d.tiles.safety.on || d.tiles.rtk.on;
     $("liveDot").className = "dot " + (d.replay ? "replay" : ok ? "on" : "off");
     $("liveText").textContent = d.replay ? "REPRODUZINDO BAG · dados não são do carro" : ok ? "Ao vivo" : "Sem dados do carro";
@@ -363,6 +385,19 @@ async function post(url, body) {
   if (!res.ok) { dialog("Não foi possível", esc(await res.text()), [["Fechar", "p"]]); return null; }
   return res.json();
 }
+$("btnNet").onclick = () => {
+  const n = last?.net;
+  if (!n) return;
+  if (n.active) {
+    dialog("Desconectar da Odroid?", "A porta de rede volta ao modo automático (DHCP) e a Odroid fica sem internet (sem correções RTK).",
+      [["Cancelar"], ["Desconectar", "d", () => post("/api/net/disconnect")]]);
+    return;
+  }
+  post("/api/net/connect").then((r) => {
+    if (r && !r.ping) dialog("Odroid sem resposta", `A porta ${esc(r.device)} foi configurada, mas a Odroid não respondeu ao ping em 10 s. Confira se ela está ligada e se o cabo é o dela.`, [["Fechar", "p"]]);
+  });
+};
+
 $("btnCar").onclick = () => {
   if (!last) return;
   if (!last.car.running) {

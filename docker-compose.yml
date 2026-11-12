@@ -27,6 +27,10 @@ services:
       # Iniciar, parar e trocar a rota usam o docker compose do alto-nivel. O
       # caminho precisa ser igual ao do host para os volumes dele serem resolvidos.
       - /var/run/docker.sock:/var/run/docker.sock
+      # Botao Conectar / Desconectar da Odroid: troca arquivos com o servico
+      # vida-rede do host (scripts/rede do alto-nivel). O painel nao mexe na rede.
+      # Sem o servico a pasta fica vazia e o botao nao aparece.
+      - /run/vida-rede:/run/vida-rede
       - ${VIDA_ALTO_NIVEL_DIR:-${HOME}/projeto-vida/projeto-vida-controle-alto-nivel}:${VIDA_ALTO_NIVEL_DIR:-${HOME}/projeto-vida/projeto-vida-controle-alto-nivel}:ro
       - ${VIDA_ANALISES_DIR:-${HOME}/projeto-vida/analises}:/caminhos
       - ${VIDA_BAGS_DIR:-${HOME}/projeto-vida/rosbag}:/bags
