@@ -31,6 +31,7 @@ Ele só **lê** os tópicos ROS e não publica nada no carro. A troca de modo co
 | Parar | `docker compose stop` do alto-nível | Sempre (menos durante gravação). O ESP32 corta a tração e freia ao perder as referências |
 | Trocar a rota | Com o carro rodando, recria a `navegacao` (o gamepad para por alguns segundos) | Como em Iniciar, sempre com confirmação na página |
 | Gravar rota | Guarda os fixes do GPS e salva em `analises/<data>/` | Fora do automático |
+| Conectar / Desconectar da Odroid | Pede ao serviço `vida-rede` do host (botão só aparece onde ele está instalado) | Desconectar: com o carro parado |
 
 O acesso ao Docker do notebook equivale a root. Por isso, o servidor escuta só em `127.0.0.1`, recusa outros
 `Host`/`Origin`, aceita só as ações acima e só rotas da lista.
@@ -75,4 +76,4 @@ docker run -d --rm --name vida_painel_teste --network host -e ROS_DOMAIN_ID=77 -
 
 ## Botão Conectar à Odroid
 
-Em computadores preparados com `scripts/rede/preparar_computador.sh` (repositório do alto-nível), o topo do painel mostra **Conectar à Odroid** / **Desconectar da Odroid**. O painel não mexe na rede: ele troca arquivos em `/run/vida-rede` com o serviço `vida-rede` do Ubuntu, que ativa o perfil "VIDA Odroid" (192.168.10.2 + NAT) e confere a Odroid com ping. Sem o serviço (como no notebook principal, que tem configuração própria) o botão não aparece. Roteiro completo em `docs/novo_computador.md` do alto-nível.
+Em computadores preparados com `scripts/rede/preparar_computador.sh` (repositório do alto-nível), o topo do painel mostra **Conectar à Odroid** / **Desconectar da Odroid**. O painel não mexe na rede: ele troca arquivos em `/run/vida-rede` com o serviço `vida-rede` do Ubuntu, que cria o perfil "VIDA Odroid" (192.168.10.2 + NAT) só na memória, preso à porta do cabo, e confere a Odroid com ping. Desconectar apaga o perfil e devolve a porta ao DHCP; reiniciar o computador também. Desconectar só é aceito com o carro parado. Sem o serviço (como no notebook principal, que tem configuração própria) o botão não aparece. Roteiro completo em `docs/novo_computador.md` do alto-nível.
