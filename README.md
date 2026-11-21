@@ -1,60 +1,85 @@
-# Painel web do VIDA
+# Projeto VIDA: painel de operação
 
-Tela única para acompanhar e operar o VIDA (LMT/UFLA): modo, segurança, GPS/RTK, bateria, posição em relação à
-rota, pendências para o automático, erros e eventos. Abre em **http://localhost:8080**, só no próprio notebook.
+Painel web de **operação e monitoramento** do **VIDA (Veículo Inteligente de Desenvolvimento
+Aplicado)**, protótipo de veículo autônomo do Laboratório de Mobilidade Terrestre (LMT) da UFLA.
 
-## Subir
+Uma tela única, aberta no navegador do notebook de operação, que mostra o estado de todo o
+veículo e conduz a operação: iniciar e parar o carro, escolher e gravar rotas, gravar e
+reproduzir registros (*bags*) e conectar o notebook à Odroid.
 
-Precisa da imagem do alto-nível (`vida-ros-ws:humble`), então faça o build dela antes:
+- **Endereço:** http://localhost:8080, no próprio notebook
+- **Visão geral do projeto e como operar o veículo:** [projeto-VIDA-UFLA](https://github.com/projeto-VIDA-UFLA)
+
+## Lugar na arquitetura
+
+O painel roda no notebook (nível 3), ao lado do
+[projeto-vida-controle-alto-nivel](https://github.com/projeto-VIDA-UFLA/projeto-vida-controle-alto-nivel).
+Ele é um nó ROS 2 que **só assina tópicos**: lê os dados do ESP32, da Odroid e do notebook e não
+publica nada no carro. A troca de modo (manual e automático) continua sendo feita pelo gamepad.
+
+## O que o painel mostra
+
+| Área | Conteúdo |
+|---|---|
+| Barra de estado | Segurança, conexão ESP32 / Odroid, RTK, correções RTK, EKF e bateria |
+| Posição do veículo | Rota, posição, orientação e rastro, em gráfico local ou sobre imagem de satélite |
+| Segurança | Enables físico e lógico, validade das referências e motivos de bloqueio do ESP32 |
+| Veículo | Velocidade e esterçamento (referência e medição), PWM dos motores e freio |
+| Navegação | Modo de operação, progresso na rota, erro lateral e erro de rumo |
+| Condições do automático | Lista de verificação para entrar no modo automático e o próximo passo |
+| Bateria | Tensão, corrente e carga estimada |
+| Erros, eventos e saúde dos dados | Erros dos nós, linha do tempo da operação e frequência de cada fonte de dados |
+
+## O que o painel comanda
+
+| Ação | O que executa | Quando é permitida |
+|---|---|---|
+| Iniciar | Sobe o serviço `navegacao` do alto nível com a rota selecionada, ou `ros_ws` sem rota | Sem automático, sem manobra, veículo parado, sem gravação de rota |
+| Parar | Para os serviços do alto nível; o ESP32 corta a tração e freia ao perder as referências | Sempre, exceto durante a gravação de uma rota |
+| Trocar a rota | Com o carro em funcionamento, recria o serviço `navegacao` | Como em Iniciar, com confirmação |
+| Gravar rota | Registra os pontos do GNSS enquanto o operador dirige e salva a rota tratada | Fora do automático |
+| Bags | Grava todos os tópicos, reproduz, renomeia e exclui registros | Reprodução bloqueia os comandos do carro |
+| Conectar / Desconectar da Odroid | Pede ao serviço `vida-rede` do notebook que configure a porta do cabo | Desconectar: com o carro parado |
+
+Ações que alteram o carro ou apagam arquivos pedem confirmação. Rotas e bags excluídos vão para
+uma lixeira (`.lixeira`) e podem ser recuperados.
+
+## Instalação
+
+O painel usa a imagem do alto nível (`vida-ros-ws:humble`) como base. Com os dois repositórios
+lado a lado em `~/projeto-vida/`:
 
 ```bash
 cd ~/projeto-vida/projeto-vida-controle-alto-nivel && docker compose build
 cd ~/projeto-vida/projeto-vida-painel && docker compose up -d --build
 ```
 
-O container usa `restart: unless-stopped`: depois disso, volta sozinho quando o notebook liga. O build baixa
-pacotes (precisa de internet); depois, ele roda sem internet.
+O container usa `restart: unless-stopped` e volta sozinho quando o notebook liga. Refaça o build
+do painel sempre que o build do alto nível mudar.
 
-Refaça o build do painel sempre que o build do alto-nível mudar, porque ele usa as mensagens e a navegação de lá.
+| Pasta do notebook | Uso |
+|---|---|
+| `~/projeto-vida/analises` | Rotas (`<pasta>/<rota>.csv`) |
+| `~/projeto-vida/rosbag` | Bags |
 
-## Acesso pelo Tailscale (só visualização)
+## Rotas gravadas pelo painel
 
-Com `.env` preenchido (modelo em `.env.example`), o painel também responde em `http://<nome>:8080` para os aparelhos da mesma conta Tailscale. Quem entra por lá vê tudo, mas o servidor recusa qualquer comando: a decisão vem do endereço em que a conexão chegou, não da tela. Wi-Fi e cabo continuam fechados. O `.env` não entra no Git.
+- Usa os pontos do GNSS (RTK *fixed* ou *float*; pontos sem RTK são descartados).
+- Reamostra a cada 0,1 m, suaviza com filtro gaussiano de 1 m e salva a cada 0,25 m.
+- A rota é fechada quando termina a até 3 m do início.
+- Ao salvar, informa o comprimento, o menor raio de curva e os trechos abaixo de 3,3 m (limite
+  de 20° de esterçamento).
+- Salva dois arquivos em `~/projeto-vida/analises/<data>/`: os pontos brutos (`_bruta.csv`) e a
+  rota tratada.
 
-## O que o painel faz no carro
+## Segurança do painel
 
-Ele só **lê** os tópicos ROS e não publica nada no carro. A troca de modo continua sendo pelo controle.
-
-| Ação | O que executa | Quando é permitida |
-|---|---|---|
-| Iniciar | `docker compose up` do alto-nível: `navegacao` com a rota selecionada, ou `ros_ws` sem rota | Sem automático, sem manobra, veículo parado, sem gravação |
-| Parar | `docker compose stop` do alto-nível | Sempre (menos durante gravação). O ESP32 corta a tração e freia ao perder as referências |
-| Trocar a rota | Com o carro rodando, recria a `navegacao` (o gamepad para por alguns segundos) | Como em Iniciar, sempre com confirmação na página |
-| Gravar rota | Guarda os fixes do GPS e salva em `analises/<data>/` | Fora do automático |
-| Conectar / Desconectar da Odroid | Pede ao serviço `vida-rede` do host (botão só aparece onde ele está instalado) | Desconectar: com o carro parado |
-
-O acesso ao Docker do notebook equivale a root. Por isso, o servidor escuta só em `127.0.0.1`, recusa outros
-`Host`/`Origin`, aceita só as ações acima e só rotas da lista.
-
-## Rotas
-
-- **Lista:** arquivos `vida_path` em `~/projeto-vida/analises/<pasta>/*.csv`, menos os `*_bruta.csv`. Subpastas como `rascunhos/` ficam de fora.
-- **Gravação:** usa os fixes de GPS, como a rota 6, não o `path_recorder`: reamostra por arco e suaviza com gaussiana de 1 m. Pontos em RTK NONE são ignorados; FLOAT é aceito (sem saltos em 01/11) e contado no resumo.
-- **Fechada ou aberta:** fechada quando termina a até 3 m do começo.
-- **Resumo ao salvar:** comprimento, raio mínimo e trecho abaixo de 3,3 m (limite de 20° com entre-eixos de ~1,2 m).
-
-## Bags
-
-Ficam em `VIDA_BAGS_DIR` (padrão `~/projeto-vida/rosbag`). Renomear troca só o nome da pasta. Excluir move para `.lixeira` dentro dessa pasta, então o espaço só é liberado ao apagar a lixeira. Um bag em gravação ou reprodução não pode ser renomeado nem excluído.
-
-## Regras de exibição
-
-- **Pendências:** repetem o `entry_problem` do `mode_manager`, com os limites lidos do `navigation.yaml`. Se ele mudar, mude também `painel/logic.py`.
-- **Bateria:** 36 V = 0% e 38,7 V = 100%, em `painel/logic.py`. A carga só é recalculada depois de 60 s parado e sem tração, porque sob carga a tensão cai. Verde a partir de 50%, amarelo de 20 a 49%, vermelho abaixo de 20%.
-- **Limpar erros:** apaga só o histórico da tela. Flags ativas continuam aparecendo até serem resolvidas, e nada é rearmado no carro.
-- **Conexão:** o bloco ESP32 / Odroid usa ping no Odroid (`VIDA_ODROID_IP`) e o nome de quem publica `/vida/safety/status` e `/robot_state/status`. Dados de um `rosbag2_player` não contam como conectado, e a barra superior avisa que é reprodução de bag.
-- **Dados parados:** viram "sem dados" em vez de manter o último valor.
-- **Mapa GPS:** imagens Esri World Imagery, salvas em disco ao selecionar a rota e usadas sem internet. Uma área ainda não salva fica sem foto, com aviso; o Gráfico funciona sempre. Os termos de uso da Esri para guardar imagens ainda precisam ser conferidos.
+- O servidor escuta só em `127.0.0.1` e recusa requisições de outros endereços e origens.
+- Só existem as ações da tabela acima, e as rotas só podem ser escolhidas entre os arquivos
+  listados.
+- **Acesso remoto opcional, só de visualização:** com o `.env` preenchido (modelo em
+  `.env.example`), aparelhos da mesma rede Tailscale também veem o painel, mas o servidor recusa
+  qualquer comando que não venha do próprio notebook.
 
 ## Testes
 
@@ -63,17 +88,19 @@ docker run --rm --network none vida-painel:humble bash -lc \
   'source /opt/ros/humble/setup.bash && source /vida_ws/install/setup.bash && cd /painel && python3 -m pytest -q tests'
 ```
 
-Para testar sem o carro, use o simulador num domínio ROS separado, sem tocar no Docker:
+Para testar sem o carro, use o simulador do alto nível num domínio ROS separado:
 
 ```bash
 docker run -d --rm --name vida_sim --network host -e ROS_DOMAIN_ID=77 -e FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
-  -v ~/projeto-vida/analises:/caminhos:ro vida-ros-ws:humble bash -lc \
-  'source /opt/ros/humble/setup.bash && source /vida_ws/install/setup.bash && exec ros2 launch vida_navigation simulation.launch.py path_file:=/caminhos/2026-11-01/rota_6.csv'
+  vida-ros-ws:humble bash -lc \
+  'source /opt/ros/humble/setup.bash && source /vida_ws/install/setup.bash && exec ros2 launch vida_navigation simulation.launch.py'
 docker run -d --rm --name vida_painel_teste --network host -e ROS_DOMAIN_ID=77 -e FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
   -e VIDA_PAINEL_PORT=18080 -e VIDA_PAINEL_DRY_RUN=1 -e VIDA_PAINEL_DATA=/tmp/d \
   -v ~/projeto-vida/analises:/caminhos:ro vida-painel:humble
 ```
 
-## Botão Conectar à Odroid
+O painel de teste fica em http://localhost:18080, sem executar comandos reais (`VIDA_PAINEL_DRY_RUN=1`).
 
-Em computadores preparados com `scripts/rede/preparar_computador.sh` (repositório do alto-nível), o topo do painel mostra **Conectar à Odroid** / **Desconectar da Odroid**. O painel não mexe na rede: ele troca arquivos em `/run/vida-rede` com o serviço `vida-rede` do Ubuntu, que cria o perfil "VIDA Odroid" (192.168.10.2 + NAT) só na memória, preso à porta do cabo, e confere a Odroid com ping. Desconectar apaga o perfil e devolve a porta ao DHCP; reiniciar o computador também. Desconectar só é aceito com o carro parado. Sem o serviço (como no notebook principal, que tem configuração própria) o botão não aparece. Roteiro completo em `docs/novo_computador.md` do alto-nível.
+## Licença
+
+MIT. Veja [`LICENSE`](LICENSE).
